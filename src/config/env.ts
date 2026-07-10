@@ -29,15 +29,15 @@ export const envSchema = z
     GEMINI_API_KEY: z.string().min(20).optional(),
     AI_MODEL: z.string().min(1).default('gemini-3.1-flash-lite'),
     AI_FILTER_TIMEOUT_MS: z.coerce.number().int().min(500).max(15_000).default(3_000),
-    AI_FILTER_LOG_THRESHOLD: z.coerce.number().min(0).max(1).default(0.65),
-    AI_FILTER_WARN_THRESHOLD: z.coerce.number().min(0).max(1).default(0.88),
+    AI_FILTER_LOG_THRESHOLD: z.coerce.number().min(0).max(1).default(0.55),
+    AI_FILTER_WARN_THRESHOLD: z.coerce.number().min(0).max(1).default(0.84),
     AI_FILTER_CACHE_TTL_SEC: z.coerce.number().int().min(60).max(86_400).default(3_600),
     AI_AUDIO_FILTER_ENABLED: booleanEnvSchema.default(false),
     AI_AUDIO_MAX_DURATION_SEC: z.coerce.number().int().min(5).max(600).default(120),
     AI_AUDIO_MAX_BYTES: z.coerce.number().int().min(100_000).max(20_000_000).default(10_000_000),
     AI_AUDIO_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(60_000).default(15_000),
-    AI_AUDIO_LOG_THRESHOLD: z.coerce.number().min(0).max(1).default(0.55),
-    AI_AUDIO_WARN_THRESHOLD: z.coerce.number().min(0).max(1).default(0.8),
+    AI_AUDIO_LOG_THRESHOLD: z.coerce.number().min(0).max(1).default(0.5),
+    AI_AUDIO_WARN_THRESHOLD: z.coerce.number().min(0).max(1).default(0.75),
   })
   .superRefine((env, context) => {
     if (env.AI_FILTER_ENABLED && !env.GEMINI_API_KEY) {
