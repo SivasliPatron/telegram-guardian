@@ -4,6 +4,7 @@ import { displayName } from '../../utils/telegram.js';
 import { rulesKeyboard } from '../rules/index.js';
 import { UserFacingError } from '../../utils/errors.js';
 import { translate } from '../../locales/index.js';
+import { commandArguments } from '../../utils/telegram.js';
 
 function renderWelcome(
   template: string,
@@ -48,8 +49,19 @@ export function registerWelcomeModule(dependencies: Dependencies): void {
   dependencies.bot.command('welcome', async (ctx) => {
     if (!ctx.group) throw new UserFacingError('error_group_only');
     await dependencies.permissions.requireAdmin(ctx, ctx.group.id);
-    const argument = ctx.message?.text.split(/\s+/)[1]?.toLowerCase();
-    if (argument !== 'on' && argument !== 'off') throw new UserFacingError('error_reason');
+    const argument = commandArguments(ctx)[0]?.toLowerCase();
+    if (argument !== 'on' && argument !== 'off') {
+      const settings = await dependencies.settings.get(ctx.group.id);
+      await ctx.reply(
+        translate(ctx.locale, 'welcome_status', {
+          status: translate(
+            ctx.locale,
+            settings.welcomeEnabled ? 'night_enabled' : 'night_disabled',
+          ),
+        }),
+      );
+      return;
+    }
     await dependencies.settings.update(ctx.group.id, { welcomeEnabled: argument === 'on' });
     await ctx.reply(translate(ctx.locale, 'setting_saved'));
   });

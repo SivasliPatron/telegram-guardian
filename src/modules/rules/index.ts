@@ -26,7 +26,7 @@ export function registerRulesModule(dependencies: Dependencies): void {
     if (!ctx.group) throw new UserFacingError('error_group_only');
     await dependencies.permissions.requireAdmin(ctx, ctx.group.id);
     const rules = commandRemainder(ctx);
-    if (!rules) throw new UserFacingError('error_reason');
+    if (!rules) throw new UserFacingError('error_setrules');
     await dependencies.settings.update(ctx.group.id, { rulesText: rules });
     await dependencies.adminLog.send(ctx.group.id, 'Regeln geändert', {
       Moderator: ctx.from?.id ?? 0,

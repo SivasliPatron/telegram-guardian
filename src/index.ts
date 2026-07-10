@@ -16,6 +16,7 @@ import { handleBotError } from './middleware/error-handler.js';
 import { commandRegistry } from './commands/registry.js';
 import { startHealthServer } from './services/health.js';
 import { TargetResolver } from './services/target-resolver.js';
+import { InternalRole } from './generated/prisma/enums.js';
 
 const env = parseEnv(process.env);
 const logger = createLogger(env);
@@ -48,9 +49,24 @@ bot.catch((error) => handleBotError(error, logger, adminLog));
 
 await Promise.all([database.$connect(), redis.ping()]);
 await jobs.start();
-await bot.api.setMyCommands(
-  commandRegistry.slice(0, 100).map(({ command, description }) => ({ command, description })),
-);
+const telegramCommands = (definitions: typeof commandRegistry) =>
+  definitions.slice(0, 100).map(({ command, description }) => ({ command, description }));
+const memberCommands = commandRegistry.filter(({ role }) => role === InternalRole.MEMBER);
+const administratorCommands = commandRegistry.filter(({ role }) => role !== InternalRole.OWNER);
+const privateCommandNames = new Set(['mydata', 'deletemydata']);
+const privateCommands = commandRegistry.filter(({ command }) => privateCommandNames.has(command));
+await bot.api.deleteMyCommands();
+await Promise.all([
+  bot.api.setMyCommands(telegramCommands(privateCommands), {
+    scope: { type: 'all_private_chats' },
+  }),
+  bot.api.setMyCommands(telegramCommands(memberCommands), {
+    scope: { type: 'all_group_chats' },
+  }),
+  bot.api.setMyCommands(telegramCommands(administratorCommands), {
+    scope: { type: 'all_chat_administrators' },
+  }),
+]);
 const healthServer = startHealthServer(env.HEALTH_PORT, database, redis);
 
 let shuttingDown = false;

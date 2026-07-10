@@ -4,12 +4,24 @@ const de = {
   error_generic: 'Ein unerwarteter Fehler ist aufgetreten. Bitte versuche es später erneut.',
   error_group_only: 'Dieser Befehl funktioniert nur in einer Gruppe.',
   error_admin_only: 'Dafür benötigst du Administratorrechte.',
+  error_owner_only: 'Dafür musst du der Gruppeneigentümer sein.',
   error_moderator_only: 'Dafür benötigst du Moderatorenrechte.',
   error_bot_permissions: 'Dem Bot fehlt die Berechtigung, Mitglieder einzuschränken.',
   error_protected_target: 'Administratoren und Eigentümer dürfen nicht moderiert werden.',
   error_target: 'Bitte gib einen @Benutzernamen an.',
   error_duration: 'Ungültige Zeitangabe. Erlaubt sind z. B. 10m, 2h, 3d oder 1w.',
   error_reason: 'Bitte gib einen Grund an.',
+  error_clock:
+    'Ungültige Uhrzeit. Verwende /setclosetime HH:MM oder /setopentime HH:MM, z. B. 00:00.',
+  error_domain: 'Bitte gib eine gültige Domain an, z. B. /allowdomain beispiel.de.',
+  error_setrules: 'Verwendung: /setrules Dein Regeltext',
+  error_log_channel: 'Verwendung: /setlogchannel -1001234567890',
+  error_custom_command: 'Verwendung: /addcommand befehl Antworttext',
+  error_remove_command: 'Verwendung: /removecommand befehl',
+  error_remove_filter: 'Verwendung: /removefilter FILTER-ID',
+  error_schedule_message:
+    'Verwendung: /schedulemessage HH:MM WOCHENTAGE TEXT, z. B. /schedulemessage 18:30 1,2,3 Erinnerung',
+  error_delete_scheduled_message: 'Verwendung: /deletescheduledmessage NACHRICHTEN-ID',
   rules_title: '📜 <b>Gruppenregeln</b>',
   rules_saved: 'Die Gruppenregeln wurden gespeichert.',
   welcome_rules_button: '📜 Regeln',
@@ -28,10 +40,13 @@ const de = {
   link_deleted: 'Nicht erlaubte Werbung oder Kontaktdaten wurden entfernt.',
   antilink_status:
     'Linkschutz: {status}\nVerwendung: <code>/antilink on</code> oder <code>/antilink off</code>',
+  welcome_status: 'Begrüßung: {status}\nVerwendung: /welcome on oder /welcome off',
   setting_saved: 'Einstellung gespeichert.',
   domain_added: 'Die Domain wurde zur Ausnahmeliste hinzugefügt.',
   domain_removed: 'Die Domain wurde aus der Ausnahmeliste entfernt.',
+  domain_not_found: 'Diese Domain steht nicht auf der Ausnahmeliste.',
   night_status: 'Nachtmodus: {enabled}\nSchließen: {close}\nÖffnen: {open}\nZeitzone: {timezone}',
+  nightmode_status: 'Nachtmodus: {status}\nVerwendung: /nightmode on oder /nightmode off',
   night_enabled: 'aktiv',
   night_disabled: 'inaktiv',
   log_channel_saved: 'Der Admin-Log-Kanal wurde erfolgreich eingerichtet.',
@@ -44,9 +59,13 @@ const de = {
   help_title: '🤖 <b>Verfügbare Befehle</b>',
   filter_added: 'Filter wurde hinzugefügt.',
   filter_removed: 'Filter wurde entfernt.',
-  filter_invalid: 'Der Filter ist ungültig oder der reguläre Ausdruck ist potenziell gefährlich.',
+  filter_invalid:
+    'Ungültiger Filter. Beispiel: /addfilter contains delete spam. Aktionen: delete, warn, mute, log, reply.',
+  filter_not_found: 'Dieser Filter wurde nicht gefunden.',
   custom_command_added: 'Benutzerdefinierter Befehl wurde gespeichert.',
   custom_command_removed: 'Benutzerdefinierter Befehl wurde entfernt.',
+  custom_command_not_found: 'Dieser benutzerdefinierte Befehl wurde nicht gefunden.',
+  scheduled_message_not_found: 'Diese geplante Nachricht wurde nicht gefunden.',
 } as const;
 
 type TranslationKey = keyof typeof de;

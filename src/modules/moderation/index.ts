@@ -66,11 +66,18 @@ export function registerModerationModule(dependencies: Dependencies): Moderation
   });
 
   dependencies.bot.command('warnings', async (ctx) => {
-    if (!ctx.group) throw new UserFacingError('error_group_only');
+    if (!ctx.group || !ctx.from) throw new UserFacingError('error_group_only');
+    const argumentsList = commandArguments(ctx);
+    const resolvedTarget = await dependencies.targets.resolve(ctx, argumentsList, ctx.group.id);
     const target =
-      (await dependencies.targets.resolve(ctx, commandArguments(ctx), ctx.group.id)) ??
-      (ctx.from ? { telegramId: BigInt(ctx.from.id), remainingArguments: [] } : null);
+      resolvedTarget ??
+      (argumentsList.length === 0
+        ? { telegramId: BigInt(ctx.from.id), remainingArguments: [] }
+        : null);
     if (!target) throw new UserFacingError('error_target');
+    if (target.telegramId !== BigInt(ctx.from.id)) {
+      await dependencies.permissions.requireModerator(ctx, ctx.group.id);
+    }
     const user = await findOrCreateUserByTelegramId(dependencies.database, target.telegramId);
     const warnings = await dependencies.database.warning.findMany({
       where: { groupId: ctx.group.id, userId: user.id, clearedAt: null, deletedAt: null },

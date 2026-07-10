@@ -25,11 +25,17 @@ export function registerInformationModule(dependencies: Dependencies): void {
 
   dependencies.bot.command('userinfo', async (ctx) => {
     if (!ctx.group || !ctx.from) throw new UserFacingError('error_group_only');
-    const target = (await dependencies.targets.resolve(
-      ctx,
-      commandArguments(ctx),
-      ctx.group.id,
-    )) ?? { telegramId: BigInt(ctx.from.id), remainingArguments: [] };
+    const argumentsList = commandArguments(ctx);
+    const resolvedTarget = await dependencies.targets.resolve(ctx, argumentsList, ctx.group.id);
+    const target =
+      resolvedTarget ??
+      (argumentsList.length === 0
+        ? { telegramId: BigInt(ctx.from.id), remainingArguments: [] }
+        : null);
+    if (!target) throw new UserFacingError('error_target');
+    if (target.telegramId !== BigInt(ctx.from.id)) {
+      await dependencies.permissions.requireModerator(ctx, ctx.group.id);
+    }
     const user = await findOrCreateUserByTelegramId(dependencies.database, target.telegramId);
     const [member, warnings, actions, history] = await Promise.all([
       dependencies.database.groupMember.findUnique({

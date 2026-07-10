@@ -9,19 +9,22 @@ export function escapeHtml(value: string): string {
 }
 
 export function commandArguments(ctx: Context): string[] {
-  const text = ctx.message?.text ?? '';
-  const firstSpace = text.indexOf(' ');
-  if (firstSpace === -1) return [];
-  return text
-    .slice(firstSpace + 1)
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
+  const remainder = rawCommandRemainder(ctx);
+  if (!remainder) return [];
+  return remainder.trim().split(/\s+/).filter(Boolean);
 }
 
 export function commandRemainder(ctx: Context, skipArguments = 0): string {
-  const argumentsList = commandArguments(ctx);
-  return argumentsList.slice(skipArguments).join(' ').trim();
+  let remainder = rawCommandRemainder(ctx);
+  for (let index = 0; index < skipArguments && remainder; index += 1) {
+    remainder = remainder.replace(/^\S+(?:\s+|$)/u, '');
+  }
+  return remainder.trim();
+}
+
+function rawCommandRemainder(ctx: Context): string {
+  const text = ctx.message?.text ?? '';
+  return /^\S+(?:\s+([\s\S]*))?$/u.exec(text)?.[1]?.trim() ?? '';
 }
 
 export interface TargetReference {

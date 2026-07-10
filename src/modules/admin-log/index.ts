@@ -8,7 +8,7 @@ export function registerAdminLogModule(dependencies: Dependencies): void {
     if (!ctx.group) throw new UserFacingError('error_group_only');
     await dependencies.permissions.requireAdmin(ctx, ctx.group.id);
     const rawId = commandArguments(ctx)[0];
-    if (!rawId || !/^-\d+$/u.test(rawId)) throw new UserFacingError('error_target');
+    if (!rawId || !/^-\d+$/u.test(rawId)) throw new UserFacingError('error_log_channel');
     await ctx.api.sendMessage(rawId, '✅ Admin-Log erfolgreich verbunden.');
     await dependencies.database.adminLogConfiguration.upsert({
       where: { groupId: ctx.group.id },

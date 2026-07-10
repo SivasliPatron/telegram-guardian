@@ -168,7 +168,7 @@ export function registerProtectionModule(dependencies: Dependencies): void {
     if (!ctx.group) throw new UserFacingError('error_group_only');
     await dependencies.permissions.requireAdmin(ctx, ctx.group.id);
     const domain = normalizeDomain(commandArguments(ctx)[0] ?? '');
-    if (!domain) throw new UserFacingError('error_reason');
+    if (!domain) throw new UserFacingError('error_domain');
     await dependencies.database.allowedDomain.upsert({
       where: { groupId_domain: { groupId: ctx.group.id, domain } },
       create: { groupId: ctx.group.id, domain },
@@ -182,10 +182,11 @@ export function registerProtectionModule(dependencies: Dependencies): void {
     if (!ctx.group) throw new UserFacingError('error_group_only');
     await dependencies.permissions.requireAdmin(ctx, ctx.group.id);
     const domain = normalizeDomain(commandArguments(ctx)[0] ?? '');
-    if (!domain) throw new UserFacingError('error_reason');
-    await dependencies.database.allowedDomain.deleteMany({
+    if (!domain) throw new UserFacingError('error_domain');
+    const result = await dependencies.database.allowedDomain.deleteMany({
       where: { groupId: ctx.group.id, domain },
     });
+    if (result.count === 0) throw new UserFacingError('domain_not_found');
     await dependencies.redis.del(`allowed-domains:${ctx.group.id}`);
     await ctx.reply(translate(ctx.locale, 'domain_removed'));
   });

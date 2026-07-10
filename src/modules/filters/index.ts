@@ -1,6 +1,7 @@
 import {
   FilterActionType,
   FilterMatchType,
+  InternalRole,
   ModerationActionType,
 } from '../../generated/prisma/enums.js';
 import type { Dependencies } from '../../types/dependencies.js';
@@ -11,6 +12,7 @@ import { translate } from '../../locales/index.js';
 import { ensureUser, findOrCreateUserByTelegramId } from '../../database/repositories.js';
 import { mutedPermissions } from '../moderation/permissions.js';
 import { parseDuration } from '../../utils/duration.js';
+import { hasMinimumRole } from '../../services/permissions.js';
 
 export function registerFilterModule(dependencies: Dependencies): void {
   dependencies.bot.command('addfilter', async (ctx) => {
@@ -61,11 +63,12 @@ export function registerFilterModule(dependencies: Dependencies): void {
     if (!ctx.group) throw new UserFacingError('error_group_only');
     await dependencies.permissions.requireAdmin(ctx, ctx.group.id);
     const id = commandArguments(ctx)[0];
-    if (!id) throw new UserFacingError('filter_invalid');
-    await dependencies.database.filter.updateMany({
+    if (!id) throw new UserFacingError('error_remove_filter');
+    const result = await dependencies.database.filter.updateMany({
       where: { id, groupId: ctx.group.id },
       data: { deletedAt: new Date(), enabled: false },
     });
+    if (result.count === 0) throw new UserFacingError('filter_not_found');
     await dependencies.redis.del(`filters:${ctx.group.id}`);
     await ctx.reply(translate(ctx.locale, 'filter_removed'));
   });
@@ -123,7 +126,7 @@ export function registerFilterModule(dependencies: Dependencies): void {
       return;
     }
     const role = await dependencies.permissions.roleFor(ctx, ctx.group.id, BigInt(ctx.from.id));
-    if (role === 'OWNER' || role === 'ADMIN' || role === 'TRUSTED') return;
+    if (hasMinimumRole(role, InternalRole.TRUSTED)) return;
     const user = await findOrCreateUserByTelegramId(dependencies.database, BigInt(ctx.from.id));
     if (
       match.action === FilterActionType.DELETE ||
@@ -175,7 +178,7 @@ export function registerFilterModule(dependencies: Dependencies): void {
         }),
         dependencies.settings.get(ctx.group.id),
       ]);
-      if (warningCount >= settings.maxWarnings) {
+      if (settings.maxWarnings > 0 && warningCount >= settings.maxWarnings) {
         const mutedUntil = new Date(Date.now() + settings.warningMuteDurationSec * 1_000);
         await ctx.api.restrictChatMember(
           ctx.group.telegramId.toString(),
