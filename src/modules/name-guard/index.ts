@@ -7,6 +7,7 @@ import { NameGuardService } from '../../services/name-guard.js';
 import type { BotContext } from '../../types/context.js';
 import type { Dependencies } from '../../types/dependencies.js';
 import { UserFacingError } from '../../utils/errors.js';
+import { setDisplayNamePresets } from './presets.js';
 import {
   commandArguments,
   commandRemainder,
@@ -92,7 +93,12 @@ export function registerNameGuardModule(dependencies: Dependencies): void {
       return;
     }
     if (value === 'on') {
-      if (names.length === 0) throw new UserFacingError('error_name_guard_empty');
+      await setDisplayNamePresets(
+        dependencies.database,
+        dependencies.redis,
+        ctx.group.id,
+        BigInt(ctx.from?.id ?? dependencies.env.OWNER_TELEGRAM_ID),
+      );
       await Promise.all([
         dependencies.permissions.requireBotRestrictionRights(ctx),
         dependencies.permissions.requireBotInviteRights(ctx),
