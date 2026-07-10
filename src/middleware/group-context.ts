@@ -32,6 +32,9 @@ export function groupContextMiddleware(dependencies: Dependencies): MiddlewareFn
     ctx.group = group;
     const settings = await dependencies.settings.get(group.id);
     ctx.locale = settings.language;
+    if (ctx.from?.username) {
+      await dependencies.targets.remember(group.id, ctx.from.id, ctx.from.username);
+    }
     if (ctx.from && ctx.message?.text?.startsWith('/')) {
       await ensureMember(dependencies.database, group.id, ctx.from);
     }

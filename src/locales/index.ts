@@ -7,7 +7,8 @@ const de = {
   error_moderator_only: 'Dafür benötigst du Moderatorenrechte.',
   error_bot_permissions: 'Dem Bot fehlt die Berechtigung, Mitglieder einzuschränken.',
   error_protected_target: 'Administratoren und Eigentümer dürfen nicht moderiert werden.',
-  error_target: 'Antworte auf eine Nachricht oder gib eine numerische Telegram-ID an.',
+  error_target:
+    'Antworte auf eine Nachricht oder gib einen @Benutzernamen bzw. eine numerische Telegram-ID an. Der Nutzer muss dem Bot bereits in der Gruppe bekannt sein.',
   error_duration: 'Ungültige Zeitangabe. Erlaubt sind z. B. 10m, 2h, 3d oder 1w.',
   error_reason: 'Bitte gib einen Grund an.',
   rules_title: '📜 <b>Gruppenregeln</b>',

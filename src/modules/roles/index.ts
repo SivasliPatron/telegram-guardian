@@ -1,7 +1,7 @@
 import { InternalRole } from '../../generated/prisma/enums.js';
 import type { Dependencies } from '../../types/dependencies.js';
 import { findOrCreateUserByTelegramId, ensureUser } from '../../database/repositories.js';
-import { commandArguments, resolveTarget } from '../../utils/telegram.js';
+import { commandArguments } from '../../utils/telegram.js';
 import { UserFacingError } from '../../utils/errors.js';
 import { translate } from '../../locales/index.js';
 import type { BotContext } from '../../types/context.js';
@@ -15,7 +15,7 @@ export function registerRolesModule(dependencies: Dependencies): void {
     } else {
       await dependencies.permissions.requireAdmin(ctx, ctx.group.id);
     }
-    const target = resolveTarget(ctx, commandArguments(ctx));
+    const target = await dependencies.targets.resolve(ctx, commandArguments(ctx), ctx.group.id);
     if (!target) throw new UserFacingError('error_target');
     const [user, grantor] = await Promise.all([
       findOrCreateUserByTelegramId(dependencies.database, target.telegramId),

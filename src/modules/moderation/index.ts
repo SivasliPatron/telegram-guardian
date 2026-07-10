@@ -1,5 +1,5 @@
 import type { Dependencies } from '../../types/dependencies.js';
-import { commandArguments, escapeHtml, resolveTarget } from '../../utils/telegram.js';
+import { commandArguments, escapeHtml } from '../../utils/telegram.js';
 import { UserFacingError } from '../../utils/errors.js';
 import { formatDuration, parseDuration } from '../../utils/duration.js';
 import { translate } from '../../locales/index.js';
@@ -18,7 +18,7 @@ export function registerModerationModule(dependencies: Dependencies): Moderation
   dependencies.bot.command('warn', async (ctx) => {
     if (!ctx.group || !ctx.from) throw new UserFacingError('error_group_only');
     await dependencies.permissions.requireModerator(ctx, ctx.group.id);
-    const target = resolveTarget(ctx, commandArguments(ctx));
+    const target = await dependencies.targets.resolve(ctx, commandArguments(ctx), ctx.group.id);
     if (!target) throw new UserFacingError('error_target');
     await dependencies.permissions.requireUnprotectedTarget(ctx, target.telegramId);
     const reason = target.remainingArguments.join(' ');
@@ -68,7 +68,7 @@ export function registerModerationModule(dependencies: Dependencies): Moderation
   dependencies.bot.command('warnings', async (ctx) => {
     if (!ctx.group) throw new UserFacingError('error_group_only');
     const target =
-      resolveTarget(ctx, commandArguments(ctx)) ??
+      (await dependencies.targets.resolve(ctx, commandArguments(ctx), ctx.group.id)) ??
       (ctx.from ? { telegramId: BigInt(ctx.from.id), remainingArguments: [] } : null);
     if (!target) throw new UserFacingError('error_target');
     const user = await findOrCreateUserByTelegramId(dependencies.database, target.telegramId);
@@ -95,7 +95,7 @@ export function registerModerationModule(dependencies: Dependencies): Moderation
     if (!ctx.group || !ctx.from) throw new UserFacingError('error_group_only');
     if (all) await dependencies.permissions.requireAdmin(ctx, ctx.group.id);
     else await dependencies.permissions.requireModerator(ctx, ctx.group.id);
-    const target = resolveTarget(ctx, commandArguments(ctx));
+    const target = await dependencies.targets.resolve(ctx, commandArguments(ctx), ctx.group.id);
     if (!target) throw new UserFacingError('error_target');
     const user = await findOrCreateUserByTelegramId(dependencies.database, target.telegramId);
     if (all) {
@@ -130,7 +130,8 @@ export function registerModerationModule(dependencies: Dependencies): Moderation
 
   const handleMute = async (ctx: BotContext, temporary: boolean) => {
     const argumentsList = commandArguments(ctx);
-    const target = resolveTarget(ctx, argumentsList);
+    if (!ctx.group) throw new UserFacingError('error_group_only');
+    const target = await dependencies.targets.resolve(ctx, argumentsList, ctx.group.id);
     if (!target) throw new UserFacingError('error_target');
     const duration = temporary ? parseDuration(target.remainingArguments[0] ?? '') : null;
     if (temporary && !duration) throw new UserFacingError('error_duration');
@@ -150,14 +151,16 @@ export function registerModerationModule(dependencies: Dependencies): Moderation
   dependencies.bot.command('tmute', (ctx) => handleMute(ctx, true));
 
   dependencies.bot.command('unmute', async (ctx) => {
-    const target = resolveTarget(ctx, commandArguments(ctx));
+    if (!ctx.group) throw new UserFacingError('error_group_only');
+    const target = await dependencies.targets.resolve(ctx, commandArguments(ctx), ctx.group.id);
     if (!target) throw new UserFacingError('error_target');
     await service.unmute(ctx, target.telegramId);
     await ctx.reply(translate(ctx.locale, 'unmuted', { user: target.telegramId.toString() }));
   });
 
   const handleBan = async (ctx: BotContext, temporary: boolean) => {
-    const target = resolveTarget(ctx, commandArguments(ctx));
+    if (!ctx.group) throw new UserFacingError('error_group_only');
+    const target = await dependencies.targets.resolve(ctx, commandArguments(ctx), ctx.group.id);
     if (!target) throw new UserFacingError('error_target');
     const duration = temporary ? parseDuration(target.remainingArguments[0] ?? '') : null;
     if (temporary && !duration) throw new UserFacingError('error_duration');
@@ -177,14 +180,16 @@ export function registerModerationModule(dependencies: Dependencies): Moderation
   dependencies.bot.command('tban', (ctx) => handleBan(ctx, true));
 
   dependencies.bot.command('unban', async (ctx) => {
-    const target = resolveTarget(ctx, commandArguments(ctx));
+    if (!ctx.group) throw new UserFacingError('error_group_only');
+    const target = await dependencies.targets.resolve(ctx, commandArguments(ctx), ctx.group.id);
     if (!target) throw new UserFacingError('error_target');
     await service.unban(ctx, target.telegramId);
     await ctx.reply(translate(ctx.locale, 'unbanned', { user: target.telegramId.toString() }));
   });
 
   dependencies.bot.command('kick', async (ctx) => {
-    const target = resolveTarget(ctx, commandArguments(ctx));
+    if (!ctx.group) throw new UserFacingError('error_group_only');
+    const target = await dependencies.targets.resolve(ctx, commandArguments(ctx), ctx.group.id);
     if (!target) throw new UserFacingError('error_target');
     await service.kick(ctx, target.telegramId);
     await ctx.reply(translate(ctx.locale, 'kicked', { user: target.telegramId.toString() }));

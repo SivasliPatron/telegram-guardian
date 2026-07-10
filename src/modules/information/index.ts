@@ -1,5 +1,5 @@
 import type { Dependencies } from '../../types/dependencies.js';
-import { commandArguments, escapeHtml, resolveTarget } from '../../utils/telegram.js';
+import { commandArguments, escapeHtml } from '../../utils/telegram.js';
 import { findOrCreateUserByTelegramId } from '../../database/repositories.js';
 import { UserFacingError } from '../../utils/errors.js';
 import { translate } from '../../locales/index.js';
@@ -25,10 +25,11 @@ export function registerInformationModule(dependencies: Dependencies): void {
 
   dependencies.bot.command('userinfo', async (ctx) => {
     if (!ctx.group || !ctx.from) throw new UserFacingError('error_group_only');
-    const target = resolveTarget(ctx, commandArguments(ctx)) ?? {
-      telegramId: BigInt(ctx.from.id),
-      remainingArguments: [],
-    };
+    const target = (await dependencies.targets.resolve(
+      ctx,
+      commandArguments(ctx),
+      ctx.group.id,
+    )) ?? { telegramId: BigInt(ctx.from.id), remainingArguments: [] };
     const user = await findOrCreateUserByTelegramId(dependencies.database, target.telegramId);
     const [member, warnings, actions, history] = await Promise.all([
       dependencies.database.groupMember.findUnique({

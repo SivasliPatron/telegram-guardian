@@ -8,6 +8,7 @@ import type { SettingsService } from '../services/settings.js';
 import type { PermissionService } from '../services/permissions.js';
 import type { AdminLogService } from '../services/admin-log.js';
 import type { JobScheduler } from '../jobs/scheduler.js';
+import type { TargetResolver } from '../services/target-resolver.js';
 
 export interface Dependencies {
   bot: Bot<BotContext>;
@@ -19,4 +20,5 @@ export interface Dependencies {
   permissions: PermissionService;
   adminLog: AdminLogService;
   jobs: JobScheduler;
+  targets: TargetResolver;
 }
