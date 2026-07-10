@@ -87,6 +87,14 @@ export class AiModerationService {
     );
   }
 
+  public decideAudio(result: AiModerationResult): AiModerationDecision {
+    return decideAiModeration(
+      result,
+      this.env.AI_AUDIO_LOG_THRESHOLD,
+      this.env.AI_AUDIO_WARN_THRESHOLD,
+    );
+  }
+
   public async classify(messageText: string): Promise<AiModerationResult | null> {
     if (!this.client) return null;
     const text = messageText.trim().slice(0, 4_096);

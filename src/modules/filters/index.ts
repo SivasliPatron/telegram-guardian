@@ -448,7 +448,18 @@ export function registerFilterModule(dependencies: Dependencies): void {
         await next();
         return;
       }
-      const decision = dependencies.aiModeration.decide(aiResult);
+      const decision = dependencies.aiModeration.decideAudio(aiResult);
+      dependencies.logger.info(
+        {
+          groupId: ctx.group.id,
+          mediaType: 'audio',
+          durationSeconds: audio.duration,
+          decision,
+          category: aiResult.category,
+          confidence: aiResult.confidence,
+        },
+        'KI-Audioanalyse abgeschlossen',
+      );
       if (decision === 'allow') {
         await next();
         return;

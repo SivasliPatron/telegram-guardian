@@ -38,4 +38,15 @@ describe('KI-Moderation', () => {
       ),
     ).toBe('warn');
   });
+
+  it('unterstützt eine getrennte, etwas niedrigere Audioschwelle', () => {
+    const result = {
+      violation: true,
+      category: 'insult' as const,
+      confidence: 0.86,
+      reason: 'Klar gesprochene Beleidigung',
+    };
+    expect(decideAiModeration(result, 0.72, 0.92)).toBe('log');
+    expect(decideAiModeration(result, 0.6, 0.85)).toBe('warn');
+  });
 });
