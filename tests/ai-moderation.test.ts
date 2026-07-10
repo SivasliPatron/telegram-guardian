@@ -47,6 +47,6 @@ describe('KI-Moderation', () => {
       reason: 'Klar gesprochene Beleidigung',
     };
     expect(decideAiModeration(result, 0.72, 0.92)).toBe('log');
-    expect(decideAiModeration(result, 0.6, 0.85)).toBe('warn');
+    expect(decideAiModeration(result, 0.55, 0.8)).toBe('warn');
   });
 });
