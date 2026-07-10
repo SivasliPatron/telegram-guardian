@@ -78,6 +78,10 @@ const de = {
   filter_invalid:
     'Ungültiger Filter. Beispiel: /addfilter contains delete spam. Aktionen: delete, warn, mute, log, reply.',
   filter_not_found: 'Dieser Filter wurde nicht gefunden.',
+  automatic_filter_warning:
+    '⚠️ <b>{user}</b> wurde automatisch verwarnt ({count}/{max}). Grund: Verstoß gegen den Wortfilter.',
+  automatic_filter_muted:
+    '🔇 <b>{user}</b> wurde nach Erreichen der Warnungsgrenze für {duration} stummgeschaltet.',
   custom_command_added: 'Benutzerdefinierter Befehl wurde gespeichert.',
   custom_command_removed: 'Benutzerdefinierter Befehl wurde entfernt.',
   custom_command_not_found: 'Dieser benutzerdefinierte Befehl wurde nicht gefunden.',

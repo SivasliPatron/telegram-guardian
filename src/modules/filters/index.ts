@@ -5,13 +5,18 @@ import {
   ModerationActionType,
 } from '../../generated/prisma/enums.js';
 import type { Dependencies } from '../../types/dependencies.js';
-import { commandArguments, commandRemainder } from '../../utils/telegram.js';
+import {
+  commandArguments,
+  commandRemainder,
+  displayName,
+  escapeHtml,
+} from '../../utils/telegram.js';
 import { filterMatches, validateFilterPattern } from '../../utils/filter.js';
 import { UserFacingError } from '../../utils/errors.js';
 import { translate } from '../../locales/index.js';
 import { ensureUser, findOrCreateUserByTelegramId } from '../../database/repositories.js';
 import { mutedPermissions } from '../moderation/permissions.js';
-import { parseDuration } from '../../utils/duration.js';
+import { formatDuration, parseDuration } from '../../utils/duration.js';
 import { hasMinimumRole } from '../../services/permissions.js';
 import { countEnabledPresetFilters, PRESET_FILTERS, setPresetFilters } from './presets.js';
 
@@ -216,6 +221,14 @@ export function registerFilterModule(dependencies: Dependencies): void {
         }),
         dependencies.settings.get(ctx.group.id),
       ]);
+      await ctx.reply(
+        translate(ctx.locale, 'automatic_filter_warning', {
+          user: escapeHtml(displayName(ctx.from)),
+          count: warningCount,
+          max: settings.maxWarnings > 0 ? settings.maxWarnings : '∞',
+        }),
+        { parse_mode: 'HTML' },
+      );
       if (settings.maxWarnings > 0 && warningCount >= settings.maxWarnings) {
         const mutedUntil = new Date(Date.now() + settings.warningMuteDurationSec * 1_000);
         await ctx.api.restrictChatMember(
@@ -231,6 +244,13 @@ export function registerFilterModule(dependencies: Dependencies): void {
           create: { groupId: ctx.group.id, userId: user.id, mutedUntil },
           update: { mutedUntil },
         });
+        await ctx.reply(
+          translate(ctx.locale, 'automatic_filter_muted', {
+            user: escapeHtml(displayName(ctx.from)),
+            duration: formatDuration(settings.warningMuteDurationSec),
+          }),
+          { parse_mode: 'HTML' },
+        );
       }
     }
     if (match.action === FilterActionType.REPLY && match.responseText)
