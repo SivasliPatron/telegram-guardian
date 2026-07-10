@@ -32,6 +32,10 @@ export const envSchema = z
     AI_FILTER_LOG_THRESHOLD: z.coerce.number().min(0).max(1).default(0.72),
     AI_FILTER_WARN_THRESHOLD: z.coerce.number().min(0).max(1).default(0.92),
     AI_FILTER_CACHE_TTL_SEC: z.coerce.number().int().min(60).max(86_400).default(3_600),
+    AI_AUDIO_FILTER_ENABLED: booleanEnvSchema.default(false),
+    AI_AUDIO_MAX_DURATION_SEC: z.coerce.number().int().min(5).max(600).default(120),
+    AI_AUDIO_MAX_BYTES: z.coerce.number().int().min(100_000).max(20_000_000).default(10_000_000),
+    AI_AUDIO_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(60_000).default(15_000),
   })
   .superRefine((env, context) => {
     if (env.AI_FILTER_ENABLED && !env.GEMINI_API_KEY) {
@@ -46,6 +50,13 @@ export const envSchema = z
         code: 'custom',
         path: ['AI_FILTER_WARN_THRESHOLD'],
         message: 'Die Verwarnschwelle muss über der Logschwelle liegen',
+      });
+    }
+    if (env.AI_AUDIO_FILTER_ENABLED && !env.AI_FILTER_ENABLED) {
+      context.addIssue({
+        code: 'custom',
+        path: ['AI_AUDIO_FILTER_ENABLED'],
+        message: 'Der Text-KI-Filter muss als Grundlage ebenfalls aktiviert sein',
       });
     }
   });

@@ -94,11 +94,8 @@ export class AiModerationService {
 
     const digest = createHash('sha256').update(`${this.env.AI_MODEL}\0${text}`).digest('hex');
     const cacheKey = `ai-moderation:v1:${digest}`;
-    const cached = await this.redis.get(cacheKey);
-    if (cached) {
-      const parsed = moderationResultSchema.safeParse(JSON.parse(cached));
-      if (parsed.success) return parsed.data;
-    }
+    const cachedResult = await this.readCached(cacheKey);
+    if (cachedResult) return cachedResult;
 
     try {
       const interaction = await this.client.interactions.create({
@@ -114,17 +111,69 @@ export class AiModerationService {
         store: false,
       });
       if (!interaction.output_text) throw new Error('Gemini lieferte keine Textantwort');
-      const result = moderationResultSchema.parse(JSON.parse(interaction.output_text));
-      await this.redis.set(
-        cacheKey,
-        JSON.stringify(result),
-        'EX',
-        this.env.AI_FILTER_CACHE_TTL_SEC,
-      );
-      return result;
+      return await this.parseAndCache(interaction.output_text, cacheKey);
     } catch (error) {
       this.logger.warn({ err: error }, 'Gemini-Moderation fehlgeschlagen; Nachricht erlaubt');
       return null;
     }
+  }
+
+  public async classifyAudio(wavAudio: Buffer): Promise<AiModerationResult | null> {
+    if (!this.client || !this.env.AI_AUDIO_FILTER_ENABLED || wavAudio.length === 0) return null;
+
+    const digest = createHash('sha256')
+      .update(`${this.env.AI_MODEL}\0audio\0`)
+      .update(wavAudio)
+      .digest('hex');
+    const cacheKey = `ai-moderation:v1:${digest}`;
+    const cachedResult = await this.readCached(cacheKey);
+    if (cachedResult) return cachedResult;
+
+    try {
+      const interaction = await this.client.interactions.create({
+        model: this.env.AI_MODEL,
+        system_instruction: SYSTEM_INSTRUCTION,
+        input: [
+          {
+            type: 'text',
+            text: 'Höre die gesprochene Nachricht vollständig an. Bewerte ausschließlich den gesprochenen Inhalt als Moderationsfall. Berücksichtige Deutsch, Türkisch und Kurmancî.',
+          },
+          {
+            type: 'audio',
+            data: wavAudio.toString('base64'),
+            mime_type: 'audio/wav',
+          },
+        ],
+        response_format: {
+          type: 'text',
+          mime_type: 'application/json',
+          schema: responseSchema,
+        },
+        generation_config: { temperature: 0 },
+        store: false,
+      });
+      if (!interaction.output_text) throw new Error('Gemini lieferte keine Textantwort');
+      return await this.parseAndCache(interaction.output_text, cacheKey);
+    } catch (error) {
+      this.logger.warn({ err: error }, 'Gemini-Audiomoderation fehlgeschlagen; Audio erlaubt');
+      return null;
+    }
+  }
+
+  private async readCached(cacheKey: string): Promise<AiModerationResult | null> {
+    const cached = await this.redis.get(cacheKey);
+    if (!cached) return null;
+    try {
+      const parsed = moderationResultSchema.safeParse(JSON.parse(cached));
+      return parsed.success ? parsed.data : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async parseAndCache(responseText: string, cacheKey: string): Promise<AiModerationResult> {
+    const result = moderationResultSchema.parse(JSON.parse(responseText));
+    await this.redis.set(cacheKey, JSON.stringify(result), 'EX', this.env.AI_FILTER_CACHE_TTL_SEC);
+    return result;
   }
 }

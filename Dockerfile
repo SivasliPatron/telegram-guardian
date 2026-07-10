@@ -10,6 +10,7 @@ RUN DATABASE_URL=postgresql://build:build@localhost:5432/build npm run prisma:ge
 FROM node:24-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+RUN apk add --no-cache ffmpeg
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=builder /app/dist ./dist

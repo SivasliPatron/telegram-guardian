@@ -19,6 +19,95 @@ import { mutedPermissions } from '../moderation/permissions.js';
 import { formatDuration, parseDuration } from '../../utils/duration.js';
 import { hasMinimumRole } from '../../services/permissions.js';
 import { countEnabledPresetFilters, PRESET_FILTERS, setPresetFilters } from './presets.js';
+import type { BotContext } from '../../types/context.js';
+import type { AiModerationResult } from '../../services/ai-moderation.js';
+import { audioWithinModerationLimits, convertAudioToWav } from '../../services/audio.js';
+
+async function applyAiWarning(
+  dependencies: Dependencies,
+  ctx: BotContext,
+  result: AiModerationResult,
+  mediaType: 'text' | 'audio',
+): Promise<void> {
+  if (!ctx.group || !ctx.from || !ctx.message) return;
+  const user = await findOrCreateUserByTelegramId(dependencies.database, BigInt(ctx.from.id));
+  await ctx.deleteMessage();
+  const me = await ctx.api.getMe();
+  const moderator = await ensureUser(dependencies.database, me);
+  const reason = `Gemini-${mediaType === 'audio' ? 'Audio' : 'Text'}: ${result.reason}`;
+  await dependencies.database.warning.create({
+    data: {
+      groupId: ctx.group.id,
+      userId: user.id,
+      moderatorId: moderator.id,
+      reason,
+      originalMessageId: BigInt(ctx.message.message_id),
+    },
+  });
+  const [warningCount, settings] = await Promise.all([
+    dependencies.database.warning.count({
+      where: {
+        groupId: ctx.group.id,
+        userId: user.id,
+        clearedAt: null,
+        deletedAt: null,
+      },
+    }),
+    dependencies.settings.get(ctx.group.id),
+  ]);
+  await ctx.reply(
+    translate(ctx.locale, 'automatic_filter_warning', {
+      user: escapeHtml(displayName(ctx.from)),
+      count: warningCount,
+      max: settings.maxWarnings > 0 ? settings.maxWarnings : '∞',
+    }),
+    { parse_mode: 'HTML' },
+  );
+  if (settings.maxWarnings > 0 && warningCount >= settings.maxWarnings) {
+    const mutedUntil = new Date(Date.now() + settings.warningMuteDurationSec * 1_000);
+    await ctx.api.restrictChatMember(
+      ctx.group.telegramId.toString(),
+      ctx.from.id,
+      mutedPermissions,
+      {
+        until_date: Math.floor(Date.now() / 1_000) + settings.warningMuteDurationSec,
+      },
+    );
+    await dependencies.database.groupMember.upsert({
+      where: { groupId_userId: { groupId: ctx.group.id, userId: user.id } },
+      create: { groupId: ctx.group.id, userId: user.id, mutedUntil },
+      update: { mutedUntil },
+    });
+    await ctx.reply(
+      translate(ctx.locale, 'automatic_filter_muted', {
+        user: escapeHtml(displayName(ctx.from)),
+        duration: formatDuration(settings.warningMuteDurationSec),
+      }),
+      { parse_mode: 'HTML' },
+    );
+  }
+  const filterName = `gemini-${mediaType}-${result.category}`;
+  await dependencies.database.moderationAction.create({
+    data: {
+      groupId: ctx.group.id,
+      targetUserId: user.id,
+      type: ModerationActionType.FILTER,
+      reason,
+      originalMessageId: BigInt(ctx.message.message_id),
+      metadata: {
+        action: FilterActionType.WARN,
+        ai: { category: result.category, confidence: result.confidence, mediaType },
+      },
+    },
+  });
+  await dependencies.adminLog.send(ctx.group.id, 'KI-Filter', {
+    Nutzer: ctx.from.id,
+    Filter: filterName,
+    Aktion: FilterActionType.WARN,
+    Kategorie: result.category,
+    Sicherheit: `${Math.round(result.confidence * 100)} %`,
+  });
+}
 
 export function registerFilterModule(dependencies: Dependencies): void {
   dependencies.bot.command('presetfilters', async (ctx) => {
@@ -161,13 +250,11 @@ export function registerFilterModule(dependencies: Dependencies): void {
           },
         });
     if (!cached) await dependencies.redis.set(filterCacheKey, JSON.stringify(filters), 'EX', 60);
-    let match = filters.find((filter) =>
+    const match = filters.find((filter) =>
       filter.presetKey
         ? presetFilterMatches(ctx.message.text, filter.pattern, filter.ignoreCase)
         : filterMatches(ctx.message.text, filter.pattern, filter.matchType, filter.ignoreCase),
     );
-    let automaticReason: string | undefined;
-    let aiMetadata: { category: string; confidence: number } | undefined;
     if (!match) {
       const role = await dependencies.permissions.roleFor(ctx, ctx.group.id, BigInt(ctx.from.id));
       if (hasMinimumRole(role, InternalRole.TRUSTED) || !dependencies.aiModeration.enabled) {
@@ -184,8 +271,6 @@ export function registerFilterModule(dependencies: Dependencies): void {
         await next();
         return;
       }
-      aiMetadata = { category: aiResult.category, confidence: aiResult.confidence };
-      automaticReason = `Gemini: ${aiResult.reason}`;
       if (decision === 'log') {
         await dependencies.adminLog.send(ctx.group.id, 'KI-Filter – Prüfung empfohlen', {
           Nutzer: ctx.from.id,
@@ -196,16 +281,8 @@ export function registerFilterModule(dependencies: Dependencies): void {
         await next();
         return;
       }
-      match = {
-        id: `gemini-${aiResult.category}`,
-        presetKey: `gemini-${aiResult.category}`,
-        pattern: '',
-        matchType: FilterMatchType.EXACT,
-        action: FilterActionType.WARN,
-        ignoreCase: true,
-        muteDurationSeconds: null,
-        responseText: null,
-      };
+      await applyAiWarning(dependencies, ctx, aiResult, 'text');
+      return;
     }
     const role = await dependencies.permissions.roleFor(ctx, ctx.group.id, BigInt(ctx.from.id));
     if (hasMinimumRole(role, InternalRole.TRUSTED)) return;
@@ -245,7 +322,7 @@ export function registerFilterModule(dependencies: Dependencies): void {
           groupId: ctx.group.id,
           userId: user.id,
           moderatorId: moderator.id,
-          reason: automaticReason ?? `Automatischer Wortfilter ${match.presetKey ?? match.id}`,
+          reason: `Automatischer Wortfilter ${match.presetKey ?? match.id}`,
           originalMessageId: BigInt(ctx.message.message_id),
         },
       });
@@ -299,21 +376,104 @@ export function registerFilterModule(dependencies: Dependencies): void {
         groupId: ctx.group.id,
         targetUserId: user.id,
         type: ModerationActionType.FILTER,
-        reason: automaticReason ?? `Filter ${match.presetKey ?? match.id}`,
+        reason: `Filter ${match.presetKey ?? match.id}`,
         originalMessageId: BigInt(ctx.message.message_id),
-        metadata: { action: match.action, ...(aiMetadata ? { ai: aiMetadata } : {}) },
+        metadata: { action: match.action },
       },
     });
     await dependencies.adminLog.send(ctx.group.id, 'Wortfilter', {
       Nutzer: ctx.from.id,
       Filter: match.presetKey ?? match.id,
       Aktion: match.action,
-      ...(aiMetadata
-        ? {
-            Kategorie: aiMetadata.category,
-            Sicherheit: `${Math.round(aiMetadata.confidence * 100)} %`,
-          }
-        : {}),
     });
+  });
+
+  dependencies.bot.on(['message:voice', 'message:audio'], async (ctx, next) => {
+    if (
+      !ctx.group ||
+      !dependencies.aiModeration.enabled ||
+      !dependencies.env.AI_AUDIO_FILTER_ENABLED
+    ) {
+      await next();
+      return;
+    }
+    const role = await dependencies.permissions.roleFor(ctx, ctx.group.id, BigInt(ctx.from.id));
+    if (hasMinimumRole(role, InternalRole.TRUSTED)) {
+      await next();
+      return;
+    }
+    const audio = 'voice' in ctx.message ? ctx.message.voice : ctx.message.audio;
+    if (
+      !audioWithinModerationLimits(
+        {
+          durationSeconds: audio.duration,
+          ...(audio.file_size === undefined ? {} : { fileSize: audio.file_size }),
+        },
+        {
+          maxDurationSeconds: dependencies.env.AI_AUDIO_MAX_DURATION_SEC,
+          maxBytes: dependencies.env.AI_AUDIO_MAX_BYTES,
+        },
+      )
+    ) {
+      await next();
+      return;
+    }
+
+    try {
+      const file = await ctx.api.getFile(audio.file_id);
+      if (!file.file_path) throw new Error('Telegram lieferte keinen Dateipfad');
+      const fileUrl = `https://api.telegram.org/file/bot${dependencies.env.BOT_TOKEN}/${file.file_path}`;
+      const response = await fetch(fileUrl, {
+        signal: AbortSignal.timeout(dependencies.env.AI_AUDIO_TIMEOUT_MS),
+      });
+      if (!response.ok)
+        throw new Error(`Telegram-Audiodownload fehlgeschlagen: ${response.status}`);
+      const contentLength = Number(response.headers.get('content-length'));
+      if (Number.isFinite(contentLength) && contentLength > dependencies.env.AI_AUDIO_MAX_BYTES) {
+        await next();
+        return;
+      }
+      const downloadedAudio = Buffer.from(await response.arrayBuffer());
+      if (downloadedAudio.length > dependencies.env.AI_AUDIO_MAX_BYTES) {
+        await next();
+        return;
+      }
+      const wavAudio = await convertAudioToWav(
+        downloadedAudio,
+        dependencies.env.AI_AUDIO_TIMEOUT_MS,
+        dependencies.env.AI_AUDIO_MAX_BYTES,
+      );
+      const aiResult = await dependencies.aiModeration.classifyAudio(wavAudio);
+      if (!aiResult) {
+        await next();
+        return;
+      }
+      const decision = dependencies.aiModeration.decide(aiResult);
+      if (decision === 'allow') {
+        await next();
+        return;
+      }
+      if (decision === 'log') {
+        await dependencies.adminLog.send(ctx.group.id, 'KI-Audiofilter – Prüfung empfohlen', {
+          Nutzer: ctx.from.id,
+          Kategorie: aiResult.category,
+          Sicherheit: `${Math.round(aiResult.confidence * 100)} %`,
+          Grund: aiResult.reason,
+        });
+        await next();
+        return;
+      }
+      await applyAiWarning(dependencies, ctx, aiResult, 'audio');
+    } catch (error) {
+      const safeError =
+        error instanceof Error
+          ? error.message.replaceAll(dependencies.env.BOT_TOKEN, '[REDACTED]')
+          : 'Unbekannter Audiofehler';
+      dependencies.logger.warn(
+        { error: safeError, groupId: ctx.group.id },
+        'Audio konnte nicht sicher moderiert werden; Nachricht erlaubt',
+      );
+      await next();
+    }
   });
 }
