@@ -1,8 +1,8 @@
 generator client {
-  provider        = "prisma-client"
-  output          = "../src/generated/prisma"
-  moduleFormat    = "esm"
-  engineType      = "client"
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  engineType          = "client"
   importFileExtension = "js"
 }
 
@@ -49,12 +49,12 @@ enum FilterActionType {
 }
 
 model TelegramGroup {
-  id                String                  @id @default(cuid())
-  telegramId        BigInt                  @unique
+  id                String                 @id @default(cuid())
+  telegramId        BigInt                 @unique
   title             String
-  isActive          Boolean                 @default(true)
-  createdAt         DateTime                @default(now())
-  updatedAt         DateTime                @updatedAt
+  isActive          Boolean                @default(true)
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
   settings          GroupSettings?
   members           GroupMember[]
   warnings          Warning[]
@@ -70,73 +70,73 @@ model TelegramGroup {
 }
 
 model GroupSettings {
-  id                       String        @id @default(cuid())
-  groupId                  String        @unique
-  group                    TelegramGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  language                 String        @default("de")
-  welcomeEnabled           Boolean       @default(true)
-  welcomeBots              Boolean       @default(false)
-  welcomeText              String        @default("Willkommen {name} in {group}!")
-  welcomeRulesButton       Boolean       @default(true)
-  welcomeDeleteAfterSec    Int?
-  maxWarnings              Int           @default(3)
-  warningMuteDurationSec   Int           @default(3600)
-  floodEnabled             Boolean       @default(true)
-  floodMaxMessages         Int           @default(6)
-  floodWindowSec           Int           @default(5)
-  floodMuteDurationSec     Int           @default(600)
-  floodExemptAdmins        Boolean       @default(true)
-  floodExemptTrusted       Boolean       @default(true)
-  linkProtectionEnabled    Boolean       @default(false)
-  blockTelegramLinks       Boolean       @default(true)
-  blockExternalLinks       Boolean       @default(true)
-  blockShortLinks          Boolean       @default(true)
-  blockUsernameAds         Boolean       @default(false)
-  blockForwardedChannels   Boolean       @default(true)
-  blockPhoneNumbers        Boolean       @default(false)
-  blockEmailAddresses      Boolean       @default(false)
-  rulesText                String        @default("Für diese Gruppe wurden noch keine Regeln hinterlegt.")
-  nightModeEnabled         Boolean       @default(false)
-  nightCloseTime           String        @default("00:00")
-  nightOpenTime            String        @default("12:00")
-  timezone                 String        @default("Europe/Berlin")
-  nightClosed              Boolean       @default(false)
-  lastNightActionAt        DateTime?
-  createdAt                DateTime      @default(now())
-  updatedAt                DateTime      @updatedAt
+  id                     String        @id @default(cuid())
+  groupId                String        @unique
+  group                  TelegramGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  language               String        @default("de")
+  welcomeEnabled         Boolean       @default(true)
+  welcomeBots            Boolean       @default(false)
+  welcomeText            String        @default("Willkommen {name} in {group}!")
+  welcomeRulesButton     Boolean       @default(true)
+  welcomeDeleteAfterSec  Int?
+  maxWarnings            Int           @default(3)
+  warningMuteDurationSec Int           @default(3600)
+  floodEnabled           Boolean       @default(true)
+  floodMaxMessages       Int           @default(6)
+  floodWindowSec         Int           @default(5)
+  floodMuteDurationSec   Int           @default(600)
+  floodExemptAdmins      Boolean       @default(true)
+  floodExemptTrusted     Boolean       @default(true)
+  linkProtectionEnabled  Boolean       @default(false)
+  blockTelegramLinks     Boolean       @default(true)
+  blockExternalLinks     Boolean       @default(true)
+  blockShortLinks        Boolean       @default(true)
+  blockUsernameAds       Boolean       @default(false)
+  blockForwardedChannels Boolean       @default(true)
+  blockPhoneNumbers      Boolean       @default(false)
+  blockEmailAddresses    Boolean       @default(false)
+  rulesText              String        @default("Für diese Gruppe wurden noch keine Regeln hinterlegt.")
+  nightModeEnabled       Boolean       @default(false)
+  nightCloseTime         String        @default("00:00")
+  nightOpenTime          String        @default("12:00")
+  timezone               String        @default("Europe/Berlin")
+  nightClosed            Boolean       @default(false)
+  lastNightActionAt      DateTime?
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
 }
 
 model User {
-  id                String             @id @default(cuid())
-  telegramId        BigInt             @unique
-  firstName         String
-  lastName          String?
-  username          String?
-  locale            String?
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
-  members           GroupMember[]
-  receivedWarnings  Warning[]          @relation("WarningTarget")
-  issuedWarnings    Warning[]          @relation("WarningModerator")
-  receivedActions   ModerationAction[] @relation("ActionTarget")
-  issuedActions     ModerationAction[] @relation("ActionModerator")
-  trustedIn         TrustedUser[]      @relation("TrustedTarget")
-  trustedBy         TrustedUser[]      @relation("TrustedGrantor")
+  id               String             @id @default(cuid())
+  telegramId       BigInt             @unique
+  firstName        String
+  lastName         String?
+  username         String?
+  locale           String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  members          GroupMember[]
+  receivedWarnings Warning[]          @relation("WarningTarget")
+  issuedWarnings   Warning[]          @relation("WarningModerator")
+  receivedActions  ModerationAction[] @relation("ActionTarget")
+  issuedActions    ModerationAction[] @relation("ActionModerator")
+  trustedIn        TrustedUser[]      @relation("TrustedTarget")
+  trustedBy        TrustedUser[]      @relation("TrustedGrantor")
 }
 
 model GroupMember {
-  id          String        @id @default(cuid())
-  groupId     String
-  userId      String
-  group       TelegramGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  user        User          @relation(fields: [userId], references: [id], onDelete: Restrict)
-  role        InternalRole  @default(MEMBER)
-  joinedAt    DateTime      @default(now())
-  lastSeenAt  DateTime      @default(now())
-  mutedUntil  DateTime?
-  deletedAt   DateTime?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id         String        @id @default(cuid())
+  groupId    String
+  userId     String
+  group      TelegramGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user       User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  role       InternalRole  @default(MEMBER)
+  joinedAt   DateTime      @default(now())
+  lastSeenAt DateTime      @default(now())
+  mutedUntil DateTime?
+  deletedAt  DateTime?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
 
   @@unique([groupId, userId])
   @@index([groupId, role])
@@ -148,14 +148,14 @@ model Warning {
   groupId           String
   userId            String
   moderatorId       String
-  group              TelegramGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  user               User          @relation("WarningTarget", fields: [userId], references: [id], onDelete: Restrict)
-  moderator          User          @relation("WarningModerator", fields: [moderatorId], references: [id], onDelete: Restrict)
-  reason             String
+  group             TelegramGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user              User          @relation("WarningTarget", fields: [userId], references: [id], onDelete: Restrict)
+  moderator         User          @relation("WarningModerator", fields: [moderatorId], references: [id], onDelete: Restrict)
+  reason            String
   originalMessageId BigInt?
-  createdAt          DateTime      @default(now())
-  clearedAt          DateTime?
-  deletedAt          DateTime?
+  createdAt         DateTime      @default(now())
+  clearedAt         DateTime?
+  deletedAt         DateTime?
 
   @@index([groupId, userId, clearedAt])
   @@index([moderatorId])
@@ -185,6 +185,7 @@ model Filter {
   id                  String           @id @default(cuid())
   groupId             String
   group               TelegramGroup    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  presetKey           String?
   pattern             String
   matchType           FilterMatchType
   action              FilterActionType
@@ -197,6 +198,7 @@ model Filter {
   updatedAt           DateTime         @updatedAt
   deletedAt           DateTime?
 
+  @@unique([groupId, presetKey])
   @@index([groupId, enabled, deletedAt])
 }
 
@@ -225,20 +227,20 @@ model TrustedUser {
 }
 
 model ScheduledMessage {
-  id                 String        @id @default(cuid())
-  groupId            String
-  group              TelegramGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  text               String
-  time               String
-  weekdays           Int[]
-  timezone           String        @default("Europe/Berlin")
-  active             Boolean       @default(true)
-  deleteAfterSeconds Int?
-  lastSentAt         DateTime?
+  id                  String        @id @default(cuid())
+  groupId             String
+  group               TelegramGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  text                String
+  time                String
+  weekdays            Int[]
+  timezone            String        @default("Europe/Berlin")
+  active              Boolean       @default(true)
+  deleteAfterSeconds  Int?
+  lastSentAt          DateTime?
   createdByTelegramId BigInt
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @updatedAt
-  deletedAt          DateTime?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  deletedAt           DateTime?
 
   @@index([groupId, active, deletedAt])
 }

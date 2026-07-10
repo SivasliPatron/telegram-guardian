@@ -24,6 +24,8 @@ const de = {
   error_delete_scheduled_message: 'Verwendung: /deletescheduledmessage NACHRICHTEN-ID',
   rules_title: '📜 <b>Gruppenregeln</b>',
   rules_saved: 'Die Gruppenregeln wurden gespeichert.',
+  setup_complete:
+    '✅ Die professionellen Gruppenregeln und die mehrsprachigen Schutzfilter wurden eingerichtet.',
   welcome_rules_button: '📜 Regeln',
   warning_added: '⚠️ {user} wurde verwarnt ({count}/{max}). Grund: {reason}',
   warnings_title: '⚠️ Verwarnungen für {user}: {count}',
@@ -59,6 +61,8 @@ const de = {
   help_title: '🤖 <b>Verfügbare Befehle</b>',
   filter_added: 'Filter wurde hinzugefügt.',
   filter_removed: 'Filter wurde entfernt.',
+  preset_filter_status:
+    'Mehrsprachige Standardfilter: {status}\nVerwendung: /presetfilters on oder /presetfilters off',
   filter_invalid:
     'Ungültiger Filter. Beispiel: /addfilter contains delete spam. Aktionen: delete, warn, mute, log, reply.',
   filter_not_found: 'Dieser Filter wurde nicht gefunden.',

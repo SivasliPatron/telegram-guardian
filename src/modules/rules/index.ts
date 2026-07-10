@@ -4,6 +4,7 @@ import { commandRemainder, escapeHtml } from '../../utils/telegram.js';
 import { translate } from '../../locales/index.js';
 import { UserFacingError } from '../../utils/errors.js';
 import type { BotContext } from '../../types/context.js';
+import { applyRecommendedGroupSetup } from '../../services/group-setup.js';
 
 export function registerRulesModule(dependencies: Dependencies): void {
   const sendRules = async (ctx: BotContext) => {
@@ -32,6 +33,21 @@ export function registerRulesModule(dependencies: Dependencies): void {
       Moderator: ctx.from?.id ?? 0,
     });
     await ctx.reply(translate(ctx.locale, 'rules_saved'));
+  });
+
+  dependencies.bot.command('setupgroup', async (ctx) => {
+    if (!ctx.group || !ctx.from) throw new UserFacingError('error_group_only');
+    await dependencies.permissions.requireAdmin(ctx, ctx.group.id);
+    await applyRecommendedGroupSetup(
+      dependencies.database,
+      dependencies.redis,
+      ctx.group.id,
+      BigInt(ctx.from.id),
+    );
+    await dependencies.adminLog.send(ctx.group.id, 'Empfohlenes Gruppensetup angewendet', {
+      Moderator: ctx.from.id,
+    });
+    await ctx.reply(translate(ctx.locale, 'setup_complete'));
   });
 }
 

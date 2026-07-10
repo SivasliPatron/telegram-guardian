@@ -123,6 +123,12 @@ export const commandRegistry: readonly CommandDefinition[] = [
     category: 'Administratoren',
   },
   {
+    command: 'setupgroup',
+    description: 'Regeln und Schutz einrichten',
+    role: InternalRole.ADMIN,
+    category: 'Administratoren',
+  },
+  {
     command: 'welcome',
     description: 'Begrüßung ein- oder ausschalten',
     role: InternalRole.ADMIN,
@@ -185,6 +191,12 @@ export const commandRegistry: readonly CommandDefinition[] = [
   {
     command: 'addfilter',
     description: 'Wortfilter erstellen',
+    role: InternalRole.ADMIN,
+    category: 'Administratoren',
+  },
+  {
+    command: 'presetfilters',
+    description: 'Standard-Wortfilter schalten',
     role: InternalRole.ADMIN,
     category: 'Administratoren',
   },

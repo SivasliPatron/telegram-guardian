@@ -13,8 +13,41 @@ import { ensureUser, findOrCreateUserByTelegramId } from '../../database/reposit
 import { mutedPermissions } from '../moderation/permissions.js';
 import { parseDuration } from '../../utils/duration.js';
 import { hasMinimumRole } from '../../services/permissions.js';
+import { countEnabledPresetFilters, PRESET_FILTERS, setPresetFilters } from './presets.js';
 
 export function registerFilterModule(dependencies: Dependencies): void {
+  dependencies.bot.command('presetfilters', async (ctx) => {
+    if (!ctx.group || !ctx.from) throw new UserFacingError('error_group_only');
+    await dependencies.permissions.requireAdmin(ctx, ctx.group.id);
+    const value = commandArguments(ctx)[0]?.toLowerCase();
+    if (value !== 'on' && value !== 'off') {
+      const active = await countEnabledPresetFilters(dependencies.database, ctx.group.id);
+      await ctx.reply(
+        translate(ctx.locale, 'preset_filter_status', {
+          status:
+            active === PRESET_FILTERS.length
+              ? translate(ctx.locale, 'night_enabled')
+              : active === 0
+                ? translate(ctx.locale, 'night_disabled')
+                : `${active}/${PRESET_FILTERS.length} aktiv`,
+        }),
+      );
+      return;
+    }
+    await setPresetFilters(
+      dependencies.database,
+      ctx.group.id,
+      BigInt(ctx.from.id),
+      value === 'on',
+    );
+    await dependencies.redis.del(`filters:${ctx.group.id}`);
+    await dependencies.adminLog.send(ctx.group.id, 'Standard-Wortfilter geändert', {
+      Moderator: ctx.from.id,
+      Status: value,
+    });
+    await ctx.reply(translate(ctx.locale, 'setting_saved'));
+  });
+
   dependencies.bot.command('addfilter', async (ctx) => {
     if (!ctx.group || !ctx.from) throw new UserFacingError('error_group_only');
     await dependencies.permissions.requireAdmin(ctx, ctx.group.id);
@@ -83,7 +116,10 @@ export function registerFilterModule(dependencies: Dependencies): void {
     });
     await ctx.reply(
       filters
-        .map((filter) => `${filter.id}: ${filter.matchType}/${filter.action} – ${filter.pattern}`)
+        .map((filter) => {
+          const preset = PRESET_FILTERS.find(({ key }) => key === filter.presetKey);
+          return `${filter.id}: ${filter.matchType}/${filter.action} – ${preset?.label ?? filter.pattern}`;
+        })
         .join('\n') || '–',
     );
   });
@@ -98,6 +134,7 @@ export function registerFilterModule(dependencies: Dependencies): void {
     const filters = cached
       ? (JSON.parse(cached) as {
           id: string;
+          presetKey?: string | null;
           pattern: string;
           matchType: FilterMatchType;
           action: FilterActionType;
@@ -109,6 +146,7 @@ export function registerFilterModule(dependencies: Dependencies): void {
           where: { groupId: ctx.group.id, enabled: true, deletedAt: null },
           select: {
             id: true,
+            presetKey: true,
             pattern: true,
             matchType: true,
             action: true,
@@ -163,7 +201,7 @@ export function registerFilterModule(dependencies: Dependencies): void {
           groupId: ctx.group.id,
           userId: user.id,
           moderatorId: moderator.id,
-          reason: `Automatischer Wortfilter ${match.id}`,
+          reason: `Automatischer Wortfilter ${match.presetKey ?? match.id}`,
           originalMessageId: BigInt(ctx.message.message_id),
         },
       });
@@ -202,14 +240,14 @@ export function registerFilterModule(dependencies: Dependencies): void {
         groupId: ctx.group.id,
         targetUserId: user.id,
         type: ModerationActionType.FILTER,
-        reason: `Filter ${match.id}`,
+        reason: `Filter ${match.presetKey ?? match.id}`,
         originalMessageId: BigInt(ctx.message.message_id),
         metadata: { action: match.action },
       },
     });
     await dependencies.adminLog.send(ctx.group.id, 'Wortfilter', {
       Nutzer: ctx.from.id,
-      Filter: match.id,
+      Filter: match.presetKey ?? match.id,
       Aktion: match.action,
     });
   });
