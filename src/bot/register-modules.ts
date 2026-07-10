@@ -10,8 +10,10 @@ import { registerScheduledMessagesModule } from '../modules/scheduled-messages/i
 import { registerAdminLogModule } from '../modules/admin-log/index.js';
 import { registerInformationModule } from '../modules/information/index.js';
 import { registerCustomCommandsModule } from '../modules/custom-commands/index.js';
+import { registerNameGuardModule } from '../modules/name-guard/index.js';
 
 export function registerModules(dependencies: Dependencies): void {
+  registerNameGuardModule(dependencies);
   registerProtectionModule(dependencies);
   registerFilterModule(dependencies);
   registerWelcomeModule(dependencies);

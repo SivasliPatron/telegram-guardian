@@ -12,6 +12,7 @@ Ein modularer Moderationsbot für große Telegram-Supergruppen. Die Anwendung l�
 - Link-, Einladungs-, Kurzlink-, Username-, Weiterleitungs-, Telefon- und E-Mail-Schutz mit gecachten Domain-Ausnahmen
 - Sichere Wortfilter mit `exact`, `contains` und geprüften regulären Ausdrücken sowie Aktionen `delete`, `warn`, `mute`, `log`, `reply`
 - Verwaltete Standardfilter für deutsche, türkische und kurmancî Beleidigungen sowie vulgäre Angriffe auf islamische Heiligtümer; neutrale Religionsbegriffe bleiben erlaubt
+- Konfigurierbarer Namensschutz für Beitrittsanfragen, neue Mitglieder und spätere Profiländerungen
 - Persistenter Nachtmodus und automatische Nachrichten mit IANA-Zeitzonen
 - Admin-Log, interne Moderatoren und vertrauenswürdige Mitglieder
 - Rollenabhängige Hilfe, Benutzerinformationen, `/mydata` und `/deletemydata`
@@ -36,7 +37,7 @@ Die Schutzmodule lassen sich pro Gruppe deaktivieren: Begrüßung, Floodschutz, 
 6. Den Bot zum Administrator machen und nur diese Rechte erteilen:
    - Nachrichten löschen
    - Nutzer sperren bzw. Mitglieder einschränken
-   - optional Nutzer einladen, falls die Gruppe dies für das Wiederzulassen verlangt
+   - Nutzer hinzufügen, wenn Beitrittsanfragen durch den Namensschutz verarbeitet werden sollen
 7. Nicht erforderlich und aus Sicherheitsgründen nicht empfohlen sind:
    - neue Administratoren hinzufügen
    - Gruppeninformationen ändern
@@ -46,6 +47,8 @@ Die Schutzmodule lassen sich pro Gruppe deaktivieren: Begrüßung, Floodschutz, 
 8. Einen privaten Kanal für Moderationsprotokolle erstellen, den Bot als Administrator mit dem Recht **Nachrichten posten** hinzufügen und die numerische Kanal-ID ermitteln.
 9. In der Gruppe `/setlogchannel -1001234567890` ausführen. Gespeichert wird die ID erst, nachdem eine Testnachricht erfolgreich versendet wurde.
 10. Die Befehle können optional zusätzlich über BotFather veröffentlicht werden; beim Start registriert der Bot sie automatisch über `setMyCommands`.
+
+Damit Namen bereits vor dem Beitritt geprüft werden, muss die Gruppe bzw. der verwendete Einladungslink auf **Beitrittsanfragen mit Admin-Bestätigung** gestellt sein. Ohne Beitrittsanfrage prüft der Bot das neue Mitglied unmittelbar nach dem Eintritt und entfernt es bei einem Treffer wieder.
 
 Wichtig: Der Bot prüft vor Mute/Ban/Kick seine Telegram-Rechte sowie den Status des Ziels. Administratoren und Gruppeneigentümer sind geschützt.
 
@@ -132,6 +135,9 @@ Zeitangaben: `10m`, `2h`, `3d`, `1w`; maximal 366 Tage.
 
 - `/setrules Text`
 - `/setupgroup` installiert die empfohlenen Regeln und mehrsprachigen Schutzfilter
+- `/addforbiddenname Verbotener Name`
+- `/forbiddennames`, `/removeforbiddenname EINTRAGS-ID`
+- `/nameguard on|off`
 - `/welcome on|off`
 - `/antilink on|off`
 - `/allowdomain example.org`, `/removedomain example.org`
@@ -156,6 +162,8 @@ Bei Wochentagen steht `0` für Sonntag, `1` für Montag bis `6` für Samstag.
 - `/demotemod @Nutzer`
 
 Die Ausgabe von `/help` wird serverseitig nach der tatsächlich ermittelten Rolle gefiltert. Telegram-Gruppenadmins werden automatisch als Admin erkannt.
+
+Der Namensschutz vergleicht Vorname, Nachname und `@Benutzername` ohne Beachtung der Großschreibung. Unsichtbare Zeichen sowie einfache Trennzeichen umgehen die Prüfung nicht. Bei einer abgelehnten Beitrittsanfrage erhält die Person privat den Hinweis, ihren Namen zu ändern. Telegram sendet Bots kein separates Gruppenereignis bei einer späteren Profiländerung; deshalb wird ein bereits aufgenommenes Mitglied bei seiner nächsten Aktivität erneut geprüft und gegebenenfalls entfernt. Die Entfernung ist kein dauerhafter Ban: Nach der Namensänderung kann die Person erneut beitreten.
 
 ## Architektur
 

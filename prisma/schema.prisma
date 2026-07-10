@@ -65,6 +65,7 @@ model TelegramGroup {
   scheduledMessages ScheduledMessage[]
   logConfiguration  AdminLogConfiguration?
   customCommands    CustomCommand[]
+  forbiddenNames    ForbiddenName[]
 
   @@index([isActive])
 }
@@ -95,6 +96,8 @@ model GroupSettings {
   blockForwardedChannels Boolean       @default(true)
   blockPhoneNumbers      Boolean       @default(false)
   blockEmailAddresses    Boolean       @default(false)
+  nameProtectionEnabled  Boolean       @default(false)
+  nameProtectionMessage  String        @default("Dieser Name ist in unserer Gruppe nicht erlaubt. Ändere deinen Namen und versuche es erneut.")
   rulesText              String        @default("Für diese Gruppe wurden noch keine Regeln hinterlegt.")
   nightModeEnabled       Boolean       @default(false)
   nightCloseTime         String        @default("00:00")
@@ -210,6 +213,23 @@ model AllowedDomain {
   createdAt DateTime      @default(now())
 
   @@unique([groupId, domain])
+}
+
+model ForbiddenName {
+  id                  String        @id @default(cuid())
+  groupId             String
+  group               TelegramGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  pattern             String
+  normalizedPattern   String
+  compactPattern      String
+  enabled             Boolean       @default(true)
+  createdByTelegramId BigInt
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  deletedAt           DateTime?
+
+  @@unique([groupId, normalizedPattern])
+  @@index([groupId, enabled, deletedAt])
 }
 
 model TrustedUser {

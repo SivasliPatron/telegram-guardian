@@ -85,6 +85,12 @@ process.once('SIGTERM', () => void shutdown('SIGTERM'));
 
 logger.info('Telegram-Bot startet im Long-Polling-Modus');
 await bot.start({
-  allowed_updates: ['message', 'callback_query', 'chat_member', 'my_chat_member'],
+  allowed_updates: [
+    'message',
+    'callback_query',
+    'chat_member',
+    'my_chat_member',
+    'chat_join_request',
+  ],
   onStart: ({ username }) => logger.info({ username }, 'Telegram-Bot ist bereit'),
 });

@@ -7,6 +7,8 @@ const de = {
   error_owner_only: 'Dafür musst du der Gruppeneigentümer sein.',
   error_moderator_only: 'Dafür benötigst du Moderatorenrechte.',
   error_bot_permissions: 'Dem Bot fehlt die Berechtigung, Mitglieder einzuschränken.',
+  error_bot_invite_permissions:
+    'Dem Bot fehlt die Admin-Berechtigung „Nutzer hinzufügen“, die für Beitrittsanfragen benötigt wird.',
   error_protected_target: 'Administratoren und Eigentümer dürfen nicht moderiert werden.',
   error_target: 'Bitte gib einen @Benutzernamen an.',
   error_duration: 'Ungültige Zeitangabe. Erlaubt sind z. B. 10m, 2h, 3d oder 1w.',
@@ -22,10 +24,20 @@ const de = {
   error_schedule_message:
     'Verwendung: /schedulemessage HH:MM WOCHENTAGE TEXT, z. B. /schedulemessage 18:30 1,2,3 Erinnerung',
   error_delete_scheduled_message: 'Verwendung: /deletescheduledmessage NACHRICHTEN-ID',
+  error_forbidden_name:
+    'Verwendung: /addforbiddenname NAME. Der Eintrag muss mindestens 3 Buchstaben oder Zahlen enthalten.',
+  error_remove_forbidden_name: 'Verwendung: /removeforbiddenname EINTRAGS-ID',
+  error_name_guard_empty: 'Füge zuerst mindestens einen Eintrag mit /addforbiddenname NAME hinzu.',
   rules_title: '📜 <b>Gruppenregeln</b>',
   rules_saved: 'Die Gruppenregeln wurden gespeichert.',
   setup_complete:
     '✅ Die professionellen Gruppenregeln und die mehrsprachigen Schutzfilter wurden eingerichtet.',
+  name_guard_status:
+    'Namensschutz: {status}\nVerbotene Einträge: {count}\nVerwendung: /nameguard on oder /nameguard off',
+  name_guard_removed: '🚫 <b>{name}</b> wurde entfernt. {message}',
+  forbidden_name_added: 'Der verbotene Name „{pattern}“ wurde gespeichert.',
+  forbidden_name_removed: 'Der verbotene Name wurde entfernt.',
+  forbidden_name_not_found: 'Dieser verbotene Namenseintrag wurde nicht gefunden.',
   welcome_rules_button: '📜 Regeln',
   warning_added: '⚠️ {user} wurde verwarnt ({count}/{max}). Grund: {reason}',
   warnings_title: '⚠️ Verwarnungen für {user}: {count}',

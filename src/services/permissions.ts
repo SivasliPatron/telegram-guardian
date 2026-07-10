@@ -72,6 +72,15 @@ export class PermissionService {
     }
   }
 
+  public async requireBotInviteRights(ctx: Context): Promise<void> {
+    if (!ctx.chat) throw new UserFacingError('error_group_only');
+    const me = await ctx.api.getMe();
+    const botMember = await ctx.api.getChatMember(ctx.chat.id, me.id);
+    if (botMember.status !== 'administrator' || !botMember.can_invite_users) {
+      throw new UserFacingError('error_bot_invite_permissions');
+    }
+  }
+
   public async requireUnprotectedTarget(ctx: Context, telegramId: bigint): Promise<void> {
     if (!ctx.chat) throw new UserFacingError('error_group_only');
     const member = await ctx.api.getChatMember(ctx.chat.id, Number(telegramId));

@@ -129,6 +129,30 @@ export const commandRegistry: readonly CommandDefinition[] = [
     category: 'Administratoren',
   },
   {
+    command: 'nameguard',
+    description: 'Namensschutz ein- oder ausschalten',
+    role: InternalRole.ADMIN,
+    category: 'Administratoren',
+  },
+  {
+    command: 'addforbiddenname',
+    description: 'Verbotenen Namen hinzufügen',
+    role: InternalRole.ADMIN,
+    category: 'Administratoren',
+  },
+  {
+    command: 'removeforbiddenname',
+    description: 'Verbotenen Namen entfernen',
+    role: InternalRole.ADMIN,
+    category: 'Administratoren',
+  },
+  {
+    command: 'forbiddennames',
+    description: 'Verbotene Namen anzeigen',
+    role: InternalRole.ADMIN,
+    category: 'Administratoren',
+  },
+  {
     command: 'welcome',
     description: 'Begrüßung ein- oder ausschalten',
     role: InternalRole.ADMIN,
