@@ -7,7 +7,7 @@ export const DEFAULT_GROUP_RULES = `1. Respektvoller Umgang
 Behandle alle Mitglieder höflich. Beleidigungen, persönliche Angriffe, Mobbing und Provokationen sind nicht erlaubt – unabhängig davon, ob sie auf Deutsch, Türkisch oder Kurmancî geschrieben werden.
 
 2. Religion und Zusammenleben
-Islamische Heiligtümer, Allah, der Koran und die Propheten dürfen nicht beschimpft oder vulgär verunglimpft werden. Sachliche Fragen, respektvolle Diskussionen und unterschiedliche Meinungen bleiben erlaubt.
+Alle Religionen, Glaubensgemeinschaften, heiligen Schriften, Heiligtümer, Propheten, religiösen Persönlichkeiten und religiösen Symbole sind respektvoll zu behandeln. Beschimpfungen, Verhöhnung, vulgäre Verunglimpfung und gezielte religiöse Provokationen sind verboten. Sachliche religiöse Gespräche bleiben erlaubt, solange sie respektvoll geführt werden.
 
 3. Kein Hass
 Rassismus, Antisemitismus sowie Hass gegen Religionen, Ethnien, Nationalitäten oder andere Personengruppen sind verboten.
@@ -21,11 +21,14 @@ Keine pornografischen, gewaltverherrlichenden oder illegalen Inhalte. Keine Droh
 6. Privatsphäre
 Veröffentliche keine privaten Daten, Bilder oder Chatverläufe anderer Personen ohne deren Zustimmung.
 
-7. Moderation
-Anweisungen des Admin-Teams sind zu beachten. Regelverstöße können zur Löschung der Nachricht, Verwarnung, Stummschaltung oder Sperre führen. Nach drei aktiven Verwarnungen erfolgt automatisch eine zeitlich begrenzte Stummschaltung.
+7. Keine unerlaubten Privatnachrichten
+Kein Mitglied darf eine andere Person aus der Gruppe per DM oder Privatnachricht kontaktieren, bevor diese Person dafür ausdrücklich im Gruppenchat ihre Erlaubnis erteilt hat. Nach einer nachvollziehbaren Meldung mit Beleg wird ein Verstoß ohne vorherige Verwarnung sofort mit dem Ausschluss aus der Gruppe geahndet.
 
-8. Gemeinschaft
-Diese Gruppe steht für respektvolles kurdisch-türkisches Zusammenleben. Kritik ist erlaubt, gezielte Feindseligkeit und Hetze nicht.`;
+8. Absolutes Politikverbot
+Politische Inhalte jeder Art sind verboten – unabhängig von politischer Richtung, Partei, Person, Organisation, Land, Anlass oder Absicht. Dazu gehören politische Diskussionen, Lob, Kritik, Wahlwerbung, Propaganda, Parolen, Symbole und Provokationen.
+
+9. Moderation
+Anweisungen des Admin-Teams sind zu beachten. Regelverstöße können zur Löschung der Nachricht, Verwarnung, Stummschaltung oder Sperre führen. Nach drei aktiven Verwarnungen erfolgt automatisch eine zeitlich begrenzte Stummschaltung. Verstöße gegen das Verbot unerlaubter Privatnachrichten führen unmittelbar zum Ausschluss ohne vorherige Verwarnung.`;
 
 export async function applyRecommendedGroupSetup(
   database: Database,
