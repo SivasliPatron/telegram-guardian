@@ -91,14 +91,13 @@ async function removeMemberForName(
   if (!ctx.group || !ctx.chat) return false;
   if (await isTelegramAdministrator(ctx, user.id)) return false;
   await dependencies.permissions.requireBotRestrictionRights(ctx);
-  await ctx.api.banChatMember(ctx.chat.id, user.id);
-  await ctx.api.unbanChatMember(ctx.chat.id, user.id, { only_if_banned: true });
-  await recordNameViolation(dependencies, ctx.group.id, user, pattern, 'member');
-  await dependencies.adminLog.send(ctx.group.id, 'Namensschutz', {
-    Nutzer: user.id,
-    Name: visibleProfileName(user),
-    Treffer: pattern,
+  const privateNotice = translate(ctx.locale, 'name_guard_private_notice', {
+    message: configuredMessage,
   });
+  const privateNoticeDelivered = await ctx.api
+    .sendMessage(user.id, privateNotice)
+    .then(() => true)
+    .catch(() => false);
   await ctx.reply(
     translate(ctx.locale, 'name_guard_removed', {
       name: escapeHtml(visibleProfileName(user)),
@@ -106,6 +105,18 @@ async function removeMemberForName(
     }),
     { parse_mode: 'HTML' },
   );
+  if (!privateNoticeDelivered) {
+    await new Promise((resolve) => setTimeout(resolve, 4_000));
+  }
+  await ctx.api.banChatMember(ctx.chat.id, user.id);
+  await ctx.api.unbanChatMember(ctx.chat.id, user.id, { only_if_banned: true });
+  await recordNameViolation(dependencies, ctx.group.id, user, pattern, 'member');
+  await dependencies.adminLog.send(ctx.group.id, 'Namensschutz', {
+    Nutzer: user.id,
+    Name: visibleProfileName(user),
+    Treffer: pattern,
+    Privatnachricht: privateNoticeDelivered ? 'zugestellt' : 'nicht möglich',
+  });
   return true;
 }
 
@@ -189,9 +200,10 @@ export function registerNameGuardModule(dependencies: Dependencies): void {
       await ctx.api.approveChatJoinRequest(request.chat.id, request.from.id);
       return;
     }
-    await ctx.api
-      .sendMessage(request.user_chat_id, settings.nameProtectionMessage)
-      .catch(() => undefined);
+    const privateNotice = translate(ctx.locale, 'name_guard_private_notice', {
+      message: settings.nameProtectionMessage,
+    });
+    await ctx.api.sendMessage(request.user_chat_id, privateNotice).catch(() => undefined);
     await ctx.api.declineChatJoinRequest(request.chat.id, request.from.id);
     await recordNameViolation(
       dependencies,

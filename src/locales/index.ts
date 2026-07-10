@@ -34,7 +34,9 @@ const de = {
     '✅ Die professionellen Gruppenregeln und die mehrsprachigen Schutzfilter wurden eingerichtet.',
   name_guard_status:
     'Namensschutz: {status}\nVerbotene Einträge: {count}\nVerwendung: /nameguard on oder /nameguard off',
-  name_guard_removed: '🚫 <b>{name}</b> wurde entfernt. {message}',
+  name_guard_removed: '🚫 <b>{name}</b> wird entfernt. {message}',
+  name_guard_private_notice:
+    '{message}\n\nGeprüft wird nur dein sichtbarer Vor- und Nachname, nicht dein @Benutzername. Ändere deinen sichtbaren Namen; danach kannst du erneut beitreten.',
   forbidden_name_added: 'Der verbotene Name „{pattern}“ wurde gespeichert.',
   forbidden_name_removed: 'Der verbotene Name wurde entfernt.',
   forbidden_name_not_found: 'Dieser verbotene Namenseintrag wurde nicht gefunden.',

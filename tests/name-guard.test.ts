@@ -6,6 +6,7 @@ import {
   normalizedProfileName,
 } from '../src/services/name-guard.js';
 import { DISPLAY_NAME_PRESETS } from '../src/modules/name-guard/presets.js';
+import { translate } from '../src/locales/index.js';
 
 describe('Namensschutz', () => {
   it('normalisiert Großschreibung, unsichtbare Zeichen und Trennzeichen', () => {
@@ -84,5 +85,14 @@ describe('Namensschutz', () => {
   it('liefert gültige politische und beleidigende Standardbegriffe', () => {
     expect(DISPLAY_NAME_PRESETS.length).toBeGreaterThan(50);
     for (const pattern of DISPLAY_NAME_PRESETS) expect(isValidForbiddenName(pattern)).toBe(true);
+  });
+
+  it('erklärt dem entfernten Nutzer den sichtbaren Namen und ignorierten @Namen', () => {
+    const notice = translate('de', 'name_guard_private_notice', {
+      message: 'Ändere deinen Namen.',
+    });
+    expect(notice).toContain('sichtbarer Vor- und Nachname');
+    expect(notice).toContain('@Benutzername');
+    expect(notice).toContain('erneut beitreten');
   });
 });
