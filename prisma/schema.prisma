@@ -1,0 +1,278 @@
+generator client {
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  moduleFormat    = "esm"
+  engineType      = "client"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum InternalRole {
+  OWNER
+  ADMIN
+  MODERATOR
+  TRUSTED
+  MEMBER
+}
+
+enum ModerationActionType {
+  WARN
+  UNWARN
+  CLEAR_WARNINGS
+  MUTE
+  UNMUTE
+  BAN
+  UNBAN
+  KICK
+  DELETE_MESSAGE
+  FLOOD
+  LINK
+  FILTER
+  SETTINGS
+}
+
+enum FilterMatchType {
+  EXACT
+  CONTAINS
+  REGEX
+}
+
+enum FilterActionType {
+  DELETE
+  WARN
+  MUTE
+  LOG
+  REPLY
+}
+
+model TelegramGroup {
+  id                String                  @id @default(cuid())
+  telegramId        BigInt                  @unique
+  title             String
+  isActive          Boolean                 @default(true)
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  settings          GroupSettings?
+  members           GroupMember[]
+  warnings          Warning[]
+  actions           ModerationAction[]
+  filters           Filter[]
+  allowedDomains    AllowedDomain[]
+  trustedUsers      TrustedUser[]
+  scheduledMessages ScheduledMessage[]
+  logConfiguration  AdminLogConfiguration?
+  customCommands    CustomCommand[]
+
+  @@index([isActive])
+}
+
+model GroupSettings {
+  id                       String        @id @default(cuid())
+  groupId                  String        @unique
+  group                    TelegramGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  language                 String        @default("de")
+  welcomeEnabled           Boolean       @default(true)
+  welcomeBots              Boolean       @default(false)
+  welcomeText              String        @default("Willkommen {name} in {group}!")
+  welcomeRulesButton       Boolean       @default(true)
+  welcomeDeleteAfterSec    Int?
+  maxWarnings              Int           @default(3)
+  warningMuteDurationSec   Int           @default(3600)
+  floodEnabled             Boolean       @default(true)
+  floodMaxMessages         Int           @default(6)
+  floodWindowSec           Int           @default(5)
+  floodMuteDurationSec     Int           @default(600)
+  floodExemptAdmins        Boolean       @default(true)
+  floodExemptTrusted       Boolean       @default(true)
+  linkProtectionEnabled    Boolean       @default(false)
+  blockTelegramLinks       Boolean       @default(true)
+  blockExternalLinks       Boolean       @default(true)
+  blockShortLinks          Boolean       @default(true)
+  blockUsernameAds         Boolean       @default(false)
+  blockForwardedChannels   Boolean       @default(true)
+  blockPhoneNumbers        Boolean       @default(false)
+  blockEmailAddresses      Boolean       @default(false)
+  rulesText                String        @default("Für diese Gruppe wurden noch keine Regeln hinterlegt.")
+  nightModeEnabled         Boolean       @default(false)
+  nightCloseTime           String        @default("00:00")
+  nightOpenTime            String        @default("12:00")
+  timezone                 String        @default("Europe/Berlin")
+  nightClosed              Boolean       @default(false)
+  lastNightActionAt        DateTime?
+  createdAt                DateTime      @default(now())
+  updatedAt                DateTime      @updatedAt
+}
+
+model User {
+  id                String             @id @default(cuid())
+  telegramId        BigInt             @unique
+  firstName         String
+  lastName          String?
+  username          String?
+  locale            String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  members           GroupMember[]
+  receivedWarnings  Warning[]          @relation("WarningTarget")
+  issuedWarnings    Warning[]          @relation("WarningModerator")
+  receivedActions   ModerationAction[] @relation("ActionTarget")
+  issuedActions     ModerationAction[] @relation("ActionModerator")
+  trustedIn         TrustedUser[]      @relation("TrustedTarget")
+  trustedBy         TrustedUser[]      @relation("TrustedGrantor")
+}
+
+model GroupMember {
+  id          String        @id @default(cuid())
+  groupId     String
+  userId      String
+  group       TelegramGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user        User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  role        InternalRole  @default(MEMBER)
+  joinedAt    DateTime      @default(now())
+  lastSeenAt  DateTime      @default(now())
+  mutedUntil  DateTime?
+  deletedAt   DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@unique([groupId, userId])
+  @@index([groupId, role])
+  @@index([userId])
+}
+
+model Warning {
+  id                String        @id @default(cuid())
+  groupId           String
+  userId            String
+  moderatorId       String
+  group              TelegramGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user               User          @relation("WarningTarget", fields: [userId], references: [id], onDelete: Restrict)
+  moderator          User          @relation("WarningModerator", fields: [moderatorId], references: [id], onDelete: Restrict)
+  reason             String
+  originalMessageId BigInt?
+  createdAt          DateTime      @default(now())
+  clearedAt          DateTime?
+  deletedAt          DateTime?
+
+  @@index([groupId, userId, clearedAt])
+  @@index([moderatorId])
+}
+
+model ModerationAction {
+  id                String               @id @default(cuid())
+  groupId           String
+  targetUserId      String?
+  moderatorId       String?
+  group             TelegramGroup        @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  targetUser        User?                @relation("ActionTarget", fields: [targetUserId], references: [id], onDelete: Restrict)
+  moderator         User?                @relation("ActionModerator", fields: [moderatorId], references: [id], onDelete: Restrict)
+  type              ModerationActionType
+  reason            String?
+  durationSeconds   Int?
+  originalMessageId BigInt?
+  metadata          Json?
+  createdAt         DateTime             @default(now())
+
+  @@index([groupId, createdAt])
+  @@index([targetUserId, createdAt])
+  @@index([moderatorId])
+}
+
+model Filter {
+  id                  String           @id @default(cuid())
+  groupId             String
+  group               TelegramGroup    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  pattern             String
+  matchType           FilterMatchType
+  action              FilterActionType
+  ignoreCase          Boolean          @default(true)
+  muteDurationSeconds Int?
+  responseText        String?
+  enabled             Boolean          @default(true)
+  createdByTelegramId BigInt
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  deletedAt           DateTime?
+
+  @@index([groupId, enabled, deletedAt])
+}
+
+model AllowedDomain {
+  id        String        @id @default(cuid())
+  groupId   String
+  group     TelegramGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  domain    String
+  createdAt DateTime      @default(now())
+
+  @@unique([groupId, domain])
+}
+
+model TrustedUser {
+  id          String        @id @default(cuid())
+  groupId     String
+  userId      String
+  grantedById String
+  group       TelegramGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user        User          @relation("TrustedTarget", fields: [userId], references: [id], onDelete: Restrict)
+  grantedBy   User          @relation("TrustedGrantor", fields: [grantedById], references: [id], onDelete: Restrict)
+  createdAt   DateTime      @default(now())
+
+  @@unique([groupId, userId])
+  @@index([userId])
+}
+
+model ScheduledMessage {
+  id                 String        @id @default(cuid())
+  groupId            String
+  group              TelegramGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  text               String
+  time               String
+  weekdays           Int[]
+  timezone           String        @default("Europe/Berlin")
+  active             Boolean       @default(true)
+  deleteAfterSeconds Int?
+  lastSentAt         DateTime?
+  createdByTelegramId BigInt
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  deletedAt          DateTime?
+
+  @@index([groupId, active, deletedAt])
+}
+
+model AdminLogConfiguration {
+  id                String        @id @default(cuid())
+  groupId           String        @unique
+  group             TelegramGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  channelTelegramId BigInt
+  enabled           Boolean       @default(true)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+}
+
+model CustomCommand {
+  id                  String        @id @default(cuid())
+  groupId             String
+  group               TelegramGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  command             String
+  responseText        String
+  buttons             Json?
+  enabled             Boolean       @default(true)
+  createdByTelegramId BigInt
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  deletedAt           DateTime?
+
+  @@unique([groupId, command])
+  @@index([groupId, enabled, deletedAt])
+}
+
+model ProcessedUpdate {
+  updateId    BigInt   @id
+  processedAt DateTime @default(now())
+
+  @@index([processedAt])
+}
