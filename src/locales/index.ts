@@ -84,6 +84,8 @@ const de = {
     '⚠️ <b>{user}</b> wurde automatisch verwarnt ({count}/{max}). Grund: Verstoß gegen den Wortfilter.',
   automatic_filter_muted:
     '🔇 <b>{user}</b> wurde nach Erreichen der Warnungsgrenze für {duration} stummgeschaltet.',
+  automatic_warning_banned:
+    '⛔ <b>{user}</b> wurde nach {count} aktiven Verwarnungen dauerhaft aus der Gruppe gebannt.',
   custom_command_added: 'Benutzerdefinierter Befehl wurde gespeichert.',
   custom_command_removed: 'Benutzerdefinierter Befehl wurde entfernt.',
   custom_command_not_found: 'Dieser benutzerdefinierte Befehl wurde nicht gefunden.',

@@ -18,4 +18,10 @@ describe('Standard-Gruppenregeln', () => {
     expect(DEFAULT_GROUP_RULES).toContain('ausdrücklich im Gruppenchat ihre Erlaubnis');
     expect(DEFAULT_GROUP_RULES).toContain('ohne vorherige Verwarnung sofort');
   });
+
+  it('kündigt ab der dritten aktiven Verwarnung einen dauerhaften Ban an', () => {
+    expect(DEFAULT_GROUP_RULES).toContain('Ab der dritten aktiven Verwarnung');
+    expect(DEFAULT_GROUP_RULES).toContain('dauerhafter Ban');
+    expect(DEFAULT_GROUP_RULES).not.toContain('zeitlich begrenzte Stummschaltung');
+  });
 });

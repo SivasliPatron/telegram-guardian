@@ -7,10 +7,10 @@ import { ensureUser, findOrCreateUserByTelegramId } from '../../database/reposit
 import { ModerationActionType } from '../../generated/prisma/enums.js';
 import { ModerationService } from './service.js';
 import type { BotContext } from '../../types/context.js';
-
-export function shouldApplyWarningMute(warningCount: number, maximumWarnings: number): boolean {
-  return maximumWarnings > 0 && warningCount >= maximumWarnings;
-}
+import {
+  banAfterWarningThreshold,
+  shouldApplyWarningBan,
+} from '../../services/warning-escalation.js';
 
 export function registerModerationModule(dependencies: Dependencies): ModerationService {
   const service = new ModerationService(dependencies);
@@ -55,12 +55,20 @@ export function registerModerationModule(dependencies: Dependencies): Moderation
       Grund: reason,
       Anzahl: count,
     });
-    if (shouldApplyWarningMute(count, settings.maxWarnings)) {
-      await service.mute(
-        ctx,
-        target.telegramId,
-        settings.warningMuteDurationSec,
-        `Automatisch nach ${count} Verwarnungen`,
+    if (shouldApplyWarningBan(count, settings.maxWarnings)) {
+      await banAfterWarningThreshold(dependencies, {
+        group: ctx.group,
+        targetUserId: user.id,
+        targetTelegramId: target.telegramId,
+        moderatorUserId: moderator.id,
+        warningCount: count,
+      });
+      await ctx.reply(
+        translate(ctx.locale, 'automatic_warning_banned', {
+          user: escapeHtml(user.firstName),
+          count,
+        }),
+        { parse_mode: 'HTML' },
       );
     }
   });

@@ -16,12 +16,16 @@ import { UserFacingError } from '../../utils/errors.js';
 import { translate } from '../../locales/index.js';
 import { ensureUser, findOrCreateUserByTelegramId } from '../../database/repositories.js';
 import { mutedPermissions } from '../moderation/permissions.js';
-import { formatDuration, parseDuration } from '../../utils/duration.js';
+import { parseDuration } from '../../utils/duration.js';
 import { hasMinimumRole } from '../../services/permissions.js';
 import { countEnabledPresetFilters, PRESET_FILTERS, setPresetFilters } from './presets.js';
 import type { BotContext } from '../../types/context.js';
 import type { AiModerationResult } from '../../services/ai-moderation.js';
 import { audioWithinModerationLimits, convertAudioToWav } from '../../services/audio.js';
+import {
+  banAfterWarningThreshold,
+  shouldApplyWarningBan,
+} from '../../services/warning-escalation.js';
 
 async function applyAiWarning(
   dependencies: Dependencies,
@@ -63,25 +67,18 @@ async function applyAiWarning(
     }),
     { parse_mode: 'HTML' },
   );
-  if (settings.maxWarnings > 0 && warningCount >= settings.maxWarnings) {
-    const mutedUntil = new Date(Date.now() + settings.warningMuteDurationSec * 1_000);
-    await ctx.api.restrictChatMember(
-      ctx.group.telegramId.toString(),
-      ctx.from.id,
-      mutedPermissions,
-      {
-        until_date: Math.floor(Date.now() / 1_000) + settings.warningMuteDurationSec,
-      },
-    );
-    await dependencies.database.groupMember.upsert({
-      where: { groupId_userId: { groupId: ctx.group.id, userId: user.id } },
-      create: { groupId: ctx.group.id, userId: user.id, mutedUntil },
-      update: { mutedUntil },
+  if (shouldApplyWarningBan(warningCount, settings.maxWarnings)) {
+    await banAfterWarningThreshold(dependencies, {
+      group: ctx.group,
+      targetUserId: user.id,
+      targetTelegramId: BigInt(ctx.from.id),
+      moderatorUserId: moderator.id,
+      warningCount,
     });
     await ctx.reply(
-      translate(ctx.locale, 'automatic_filter_muted', {
+      translate(ctx.locale, 'automatic_warning_banned', {
         user: escapeHtml(displayName(ctx.from)),
-        duration: formatDuration(settings.warningMuteDurationSec),
+        count: warningCount,
       }),
       { parse_mode: 'HTML' },
     );
@@ -345,25 +342,18 @@ export function registerFilterModule(dependencies: Dependencies): void {
         }),
         { parse_mode: 'HTML' },
       );
-      if (settings.maxWarnings > 0 && warningCount >= settings.maxWarnings) {
-        const mutedUntil = new Date(Date.now() + settings.warningMuteDurationSec * 1_000);
-        await ctx.api.restrictChatMember(
-          ctx.group.telegramId.toString(),
-          ctx.from.id,
-          mutedPermissions,
-          {
-            until_date: Math.floor(Date.now() / 1_000) + settings.warningMuteDurationSec,
-          },
-        );
-        await dependencies.database.groupMember.upsert({
-          where: { groupId_userId: { groupId: ctx.group.id, userId: user.id } },
-          create: { groupId: ctx.group.id, userId: user.id, mutedUntil },
-          update: { mutedUntil },
+      if (shouldApplyWarningBan(warningCount, settings.maxWarnings)) {
+        await banAfterWarningThreshold(dependencies, {
+          group: ctx.group,
+          targetUserId: user.id,
+          targetTelegramId: BigInt(ctx.from.id),
+          moderatorUserId: moderator.id,
+          warningCount,
         });
         await ctx.reply(
-          translate(ctx.locale, 'automatic_filter_muted', {
+          translate(ctx.locale, 'automatic_warning_banned', {
             user: escapeHtml(displayName(ctx.from)),
-            duration: formatDuration(settings.warningMuteDurationSec),
+            count: warningCount,
           }),
           { parse_mode: 'HTML' },
         );

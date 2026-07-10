@@ -28,7 +28,7 @@ Kein Mitglied darf eine andere Person aus der Gruppe per DM oder Privatnachricht
 Politische Inhalte jeder Art sind verboten – unabhängig von politischer Richtung, Partei, Person, Organisation, Land, Anlass oder Absicht. Dazu gehören politische Diskussionen, Lob, Kritik, Wahlwerbung, Propaganda, Parolen, Symbole und Provokationen.
 
 9. Moderation
-Anweisungen des Admin-Teams sind zu beachten. Regelverstöße können zur Löschung der Nachricht, Verwarnung, Stummschaltung oder Sperre führen. Nach drei aktiven Verwarnungen erfolgt automatisch eine zeitlich begrenzte Stummschaltung. Verstöße gegen das Verbot unerlaubter Privatnachrichten führen unmittelbar zum Ausschluss ohne vorherige Verwarnung.`;
+Anweisungen des Admin-Teams sind zu beachten. Regelverstöße können zur Löschung der Nachricht, Verwarnung, Stummschaltung oder Sperre führen. Ab der dritten aktiven Verwarnung erfolgt automatisch ein dauerhafter Ban aus der Gruppe. Verstöße gegen das Verbot unerlaubter Privatnachrichten führen unmittelbar zum Ausschluss ohne vorherige Verwarnung.`;
 
 export async function applyRecommendedGroupSetup(
   database: Database,
