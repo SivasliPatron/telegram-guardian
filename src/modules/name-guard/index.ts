@@ -3,17 +3,16 @@ import { InternalRole, ModerationActionType } from '../../generated/prisma/enums
 import { ensureUser } from '../../database/repositories.js';
 import { translate } from '../../locales/index.js';
 import { hasMinimumRole } from '../../services/permissions.js';
-import { NameGuardService } from '../../services/name-guard.js';
+import {
+  NameGuardService,
+  visibleProfileName,
+  type ForbiddenNameMatch,
+} from '../../services/name-guard.js';
 import type { BotContext } from '../../types/context.js';
 import type { Dependencies } from '../../types/dependencies.js';
 import { UserFacingError } from '../../utils/errors.js';
 import { setDisplayNamePresets } from './presets.js';
-import {
-  commandArguments,
-  commandRemainder,
-  displayName,
-  escapeHtml,
-} from '../../utils/telegram.js';
+import { commandArguments, commandRemainder, escapeHtml } from '../../utils/telegram.js';
 
 async function recordNameViolation(
   dependencies: Dependencies,
@@ -43,6 +42,45 @@ async function isTelegramAdministrator(ctx: BotContext, userId: number): Promise
   return member.status === 'administrator' || member.status === 'creator';
 }
 
+async function findNameViolation(
+  dependencies: Dependencies,
+  service: NameGuardService,
+  groupId: string,
+  user: TelegramUser,
+): Promise<ForbiddenNameMatch | null> {
+  const presetViolation = await service.findViolation(groupId, user);
+  if (presetViolation) return presetViolation;
+
+  const result = await dependencies.aiModeration.classifyDisplayName(visibleProfileName(user));
+  if (!result) return null;
+  const decision = dependencies.aiModeration.decideDisplayName(result);
+  dependencies.logger.info(
+    {
+      groupId,
+      mediaType: 'display-name',
+      decision,
+      category: result.category,
+      confidence: result.confidence,
+    },
+    'KI-Namensprüfung abgeschlossen',
+  );
+  if (decision === 'log') {
+    await dependencies.adminLog.send(groupId, 'KI-Namensprüfung – Prüfung empfohlen', {
+      Nutzer: user.id,
+      Name: visibleProfileName(user),
+      Kategorie: result.category,
+      Sicherheit: `${Math.round(result.confidence * 100)} %`,
+      Grund: result.reason,
+    });
+    return null;
+  }
+  if (decision !== 'warn') return null;
+  return {
+    id: `gemini-name-${result.category}`,
+    pattern: `KI-${result.category}: ${result.reason}`,
+  };
+}
+
 async function removeMemberForName(
   dependencies: Dependencies,
   ctx: BotContext,
@@ -58,12 +96,12 @@ async function removeMemberForName(
   await recordNameViolation(dependencies, ctx.group.id, user, pattern, 'member');
   await dependencies.adminLog.send(ctx.group.id, 'Namensschutz', {
     Nutzer: user.id,
-    Name: displayName(user),
+    Name: visibleProfileName(user),
     Treffer: pattern,
   });
   await ctx.reply(
     translate(ctx.locale, 'name_guard_removed', {
-      name: escapeHtml(displayName(user)),
+      name: escapeHtml(visibleProfileName(user)),
       message: escapeHtml(configuredMessage),
     }),
     { parse_mode: 'HTML' },
@@ -146,7 +184,7 @@ export function registerNameGuardModule(dependencies: Dependencies): void {
       return;
     }
     const request = ctx.chatJoinRequest;
-    const violation = await service.findViolation(ctx.group.id, request.from);
+    const violation = await findNameViolation(dependencies, service, ctx.group.id, request.from);
     if (!violation) {
       await ctx.api.approveChatJoinRequest(request.chat.id, request.from.id);
       return;
@@ -164,7 +202,7 @@ export function registerNameGuardModule(dependencies: Dependencies): void {
     );
     await dependencies.adminLog.send(ctx.group.id, 'Beitrittsanfrage abgelehnt', {
       Nutzer: request.from.id,
-      Name: displayName(request.from),
+      Name: visibleProfileName(request.from),
       Treffer: violation.pattern,
     });
   });
@@ -182,7 +220,7 @@ export function registerNameGuardModule(dependencies: Dependencies): void {
     let removed = false;
     for (const user of ctx.message.new_chat_members) {
       if (user.is_bot) continue;
-      const violation = await service.findViolation(ctx.group.id, user);
+      const violation = await findNameViolation(dependencies, service, ctx.group.id, user);
       if (!violation) continue;
       const wasRemoved = await removeMemberForName(
         dependencies,
@@ -215,7 +253,7 @@ export function registerNameGuardModule(dependencies: Dependencies): void {
       await next();
       return;
     }
-    const violation = await service.findViolation(ctx.group.id, ctx.from);
+    const violation = await findNameViolation(dependencies, service, ctx.group.id, ctx.from);
     if (!violation) {
       await next();
       return;

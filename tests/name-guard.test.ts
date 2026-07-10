@@ -49,6 +49,16 @@ describe('Namensschutz', () => {
     ).toBe(true);
   });
 
+  it('erkennt längere Beleidigungen auch mit angehängten Präfixen', () => {
+    const forbidden = normalizeName('hurensohn');
+    expect(
+      matchesForbiddenName(normalizeName('Duhurensohn'), {
+        normalizedPattern: forbidden.normalized,
+        compactPattern: forbidden.compact,
+      }),
+    ).toBe(true);
+  });
+
   it('lehnt zu kurze und überlange Einträge ab', () => {
     expect(isValidForbiddenName('ab')).toBe(false);
     expect(isValidForbiddenName('abc')).toBe(true);

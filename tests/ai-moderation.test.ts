@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decideAiModeration } from '../src/services/ai-moderation.js';
+import { decideAiModeration, decideDisplayNameModeration } from '../src/services/ai-moderation.js';
 
 describe('KI-Moderation', () => {
   it('lässt neutrale oder unsichere Bewertungen durch', () => {
@@ -48,5 +48,20 @@ describe('KI-Moderation', () => {
     };
     expect(decideAiModeration(result, 0.72, 0.92)).toBe('log');
     expect(decideAiModeration(result, 0.5, 0.75)).toBe('warn');
+  });
+
+  it('kickt eindeutige politische oder beleidigende sichtbare Namen', () => {
+    expect(
+      decideDisplayNameModeration(
+        {
+          violation: true,
+          category: 'insult',
+          confidence: 0.9,
+          reason: 'Beleidigender sichtbarer Name',
+        },
+        0.5,
+        0.75,
+      ),
+    ).toBe('warn');
   });
 });

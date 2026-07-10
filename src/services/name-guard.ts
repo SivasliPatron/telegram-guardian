@@ -33,7 +33,11 @@ export function normalizeName(value: string): NormalizedName {
 }
 
 export function normalizedProfileName(user: TelegramUser): NormalizedName {
-  return normalizeName([user.first_name, user.last_name].filter(Boolean).join(' '));
+  return normalizeName(visibleProfileName(user));
+}
+
+export function visibleProfileName(user: TelegramUser): string {
+  return [user.first_name, user.last_name].filter(Boolean).join(' ');
 }
 
 export function isValidForbiddenName(value: string): boolean {
@@ -45,6 +49,9 @@ export function matchesForbiddenName(
   name: NormalizedName,
   forbidden: Pick<CachedForbiddenName, 'normalizedPattern' | 'compactPattern'>,
 ): boolean {
+  if (forbidden.compactPattern.length >= 5 && name.compact.includes(forbidden.compactPattern)) {
+    return true;
+  }
   const flexiblePattern = Array.from(forbidden.compactPattern)
     .map((character) => character.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'))
     .join(String.raw`[^\p{L}\p{N}]*`);

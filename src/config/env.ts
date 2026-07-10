@@ -38,6 +38,9 @@ export const envSchema = z
     AI_AUDIO_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(60_000).default(15_000),
     AI_AUDIO_LOG_THRESHOLD: z.coerce.number().min(0).max(1).default(0.5),
     AI_AUDIO_WARN_THRESHOLD: z.coerce.number().min(0).max(1).default(0.75),
+    AI_NAME_FILTER_ENABLED: booleanEnvSchema.default(false),
+    AI_NAME_LOG_THRESHOLD: z.coerce.number().min(0).max(1).default(0.5),
+    AI_NAME_KICK_THRESHOLD: z.coerce.number().min(0).max(1).default(0.75),
   })
   .superRefine((env, context) => {
     if (env.AI_FILTER_ENABLED && !env.GEMINI_API_KEY) {
@@ -66,6 +69,20 @@ export const envSchema = z
         code: 'custom',
         path: ['AI_AUDIO_WARN_THRESHOLD'],
         message: 'Die Audio-Verwarnschwelle muss über der Audio-Logschwelle liegen',
+      });
+    }
+    if (env.AI_NAME_FILTER_ENABLED && !env.AI_FILTER_ENABLED) {
+      context.addIssue({
+        code: 'custom',
+        path: ['AI_NAME_FILTER_ENABLED'],
+        message: 'Der Text-KI-Filter muss als Grundlage ebenfalls aktiviert sein',
+      });
+    }
+    if (env.AI_NAME_LOG_THRESHOLD >= env.AI_NAME_KICK_THRESHOLD) {
+      context.addIssue({
+        code: 'custom',
+        path: ['AI_NAME_KICK_THRESHOLD'],
+        message: 'Die KI-Namensperre muss über der Namens-Logschwelle liegen',
       });
     }
   });
