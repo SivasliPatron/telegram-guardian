@@ -17,6 +17,7 @@ import { commandRegistry } from './commands/registry.js';
 import { startHealthServer } from './services/health.js';
 import { TargetResolver } from './services/target-resolver.js';
 import { InternalRole } from './generated/prisma/enums.js';
+import { AiModerationService } from './services/ai-moderation.js';
 
 const env = parseEnv(process.env);
 const logger = createLogger(env);
@@ -28,6 +29,7 @@ const permissions = new PermissionService(database, BigInt(env.OWNER_TELEGRAM_ID
 const adminLog = new AdminLogService(database, bot.api, logger);
 const jobs = new JobScheduler(database, redis, bot, logger, env.REDIS_URL);
 const targets = new TargetResolver(database, redis);
+const aiModeration = new AiModerationService(env, redis, logger);
 const dependencies: Dependencies = {
   bot,
   database,
@@ -39,6 +41,7 @@ const dependencies: Dependencies = {
   adminLog,
   jobs,
   targets,
+  aiModeration,
 };
 
 bot.use(deduplicateUpdates(redis));

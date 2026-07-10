@@ -161,14 +161,51 @@ export function registerFilterModule(dependencies: Dependencies): void {
           },
         });
     if (!cached) await dependencies.redis.set(filterCacheKey, JSON.stringify(filters), 'EX', 60);
-    const match = filters.find((filter) =>
+    let match = filters.find((filter) =>
       filter.presetKey
         ? presetFilterMatches(ctx.message.text, filter.pattern, filter.ignoreCase)
         : filterMatches(ctx.message.text, filter.pattern, filter.matchType, filter.ignoreCase),
     );
+    let automaticReason: string | undefined;
+    let aiMetadata: { category: string; confidence: number } | undefined;
     if (!match) {
-      await next();
-      return;
+      const role = await dependencies.permissions.roleFor(ctx, ctx.group.id, BigInt(ctx.from.id));
+      if (hasMinimumRole(role, InternalRole.TRUSTED) || !dependencies.aiModeration.enabled) {
+        await next();
+        return;
+      }
+      const aiResult = await dependencies.aiModeration.classify(ctx.message.text);
+      if (!aiResult) {
+        await next();
+        return;
+      }
+      const decision = dependencies.aiModeration.decide(aiResult);
+      if (decision === 'allow') {
+        await next();
+        return;
+      }
+      aiMetadata = { category: aiResult.category, confidence: aiResult.confidence };
+      automaticReason = `Gemini: ${aiResult.reason}`;
+      if (decision === 'log') {
+        await dependencies.adminLog.send(ctx.group.id, 'KI-Filter – Prüfung empfohlen', {
+          Nutzer: ctx.from.id,
+          Kategorie: aiResult.category,
+          Sicherheit: `${Math.round(aiResult.confidence * 100)} %`,
+          Grund: aiResult.reason,
+        });
+        await next();
+        return;
+      }
+      match = {
+        id: `gemini-${aiResult.category}`,
+        presetKey: `gemini-${aiResult.category}`,
+        pattern: '',
+        matchType: FilterMatchType.EXACT,
+        action: FilterActionType.WARN,
+        ignoreCase: true,
+        muteDurationSeconds: null,
+        responseText: null,
+      };
     }
     const role = await dependencies.permissions.roleFor(ctx, ctx.group.id, BigInt(ctx.from.id));
     if (hasMinimumRole(role, InternalRole.TRUSTED)) return;
@@ -208,7 +245,7 @@ export function registerFilterModule(dependencies: Dependencies): void {
           groupId: ctx.group.id,
           userId: user.id,
           moderatorId: moderator.id,
-          reason: `Automatischer Wortfilter ${match.presetKey ?? match.id}`,
+          reason: automaticReason ?? `Automatischer Wortfilter ${match.presetKey ?? match.id}`,
           originalMessageId: BigInt(ctx.message.message_id),
         },
       });
@@ -262,15 +299,21 @@ export function registerFilterModule(dependencies: Dependencies): void {
         groupId: ctx.group.id,
         targetUserId: user.id,
         type: ModerationActionType.FILTER,
-        reason: `Filter ${match.presetKey ?? match.id}`,
+        reason: automaticReason ?? `Filter ${match.presetKey ?? match.id}`,
         originalMessageId: BigInt(ctx.message.message_id),
-        metadata: { action: match.action },
+        metadata: { action: match.action, ...(aiMetadata ? { ai: aiMetadata } : {}) },
       },
     });
     await dependencies.adminLog.send(ctx.group.id, 'Wortfilter', {
       Nutzer: ctx.from.id,
       Filter: match.presetKey ?? match.id,
       Aktion: match.action,
+      ...(aiMetadata
+        ? {
+            Kategorie: aiMetadata.category,
+            Sicherheit: `${Math.round(aiMetadata.confidence * 100)} %`,
+          }
+        : {}),
     });
   });
 }

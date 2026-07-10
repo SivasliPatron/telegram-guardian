@@ -5,7 +5,16 @@ export function createLogger(env: Env): Logger {
   return pino({
     level: env.LOG_LEVEL,
     redact: {
-      paths: ['BOT_TOKEN', 'token', '*.token', 'req.headers.authorization', 'password'],
+      paths: [
+        'BOT_TOKEN',
+        'GEMINI_API_KEY',
+        'apiKey',
+        '*.apiKey',
+        'token',
+        '*.token',
+        'req.headers.authorization',
+        'password',
+      ],
       censor: '[REDACTED]',
     },
     ...(env.NODE_ENV === 'development'
