@@ -11,7 +11,7 @@ Ein modularer Moderationsbot für große Telegram-Supergruppen. Die Anwendung l�
 - Redis-basierter Sliding-Window-Floodschutz ohne PostgreSQL-Zugriff pro Nachricht
 - Link-, Einladungs-, Kurzlink-, Username-, Weiterleitungs-, Telefon- und E-Mail-Schutz mit gecachten Domain-Ausnahmen
 - Sichere Wortfilter mit `exact`, `contains` und geprüften regulären Ausdrücken sowie Aktionen `delete`, `warn`, `mute`, `log`, `reply`
-- Verwaltete Standardfilter für deutsche, türkische und kurmancî Beleidigungen sowie vulgäre Angriffe auf islamische Heiligtümer; neutrale Religionsbegriffe bleiben erlaubt
+- Verwaltete Standardfilter für deutsche, türkische und kurmancî Beleidigungen sowie vulgäre Angriffe auf islamische Heiligtümer; Leetspeak, unsichtbare Zeichen, Buchstabenwiederholungen und einfache Trennzeichen werden normalisiert, während neutrale Religionsbegriffe erlaubt bleiben
 - Konfigurierbarer Namensschutz für Beitrittsanfragen, neue Mitglieder und spätere Profiländerungen
 - Persistenter Nachtmodus und automatische Nachrichten mit IANA-Zeitzonen
 - Admin-Log, interne Moderatoren und vertrauenswürdige Mitglieder

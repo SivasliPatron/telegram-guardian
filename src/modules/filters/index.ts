@@ -11,7 +11,7 @@ import {
   displayName,
   escapeHtml,
 } from '../../utils/telegram.js';
-import { filterMatches, validateFilterPattern } from '../../utils/filter.js';
+import { filterMatches, presetFilterMatches, validateFilterPattern } from '../../utils/filter.js';
 import { UserFacingError } from '../../utils/errors.js';
 import { translate } from '../../locales/index.js';
 import { ensureUser, findOrCreateUserByTelegramId } from '../../database/repositories.js';
@@ -162,7 +162,9 @@ export function registerFilterModule(dependencies: Dependencies): void {
         });
     if (!cached) await dependencies.redis.set(filterCacheKey, JSON.stringify(filters), 'EX', 60);
     const match = filters.find((filter) =>
-      filterMatches(ctx.message.text, filter.pattern, filter.matchType, filter.ignoreCase),
+      filter.presetKey
+        ? presetFilterMatches(ctx.message.text, filter.pattern, filter.ignoreCase)
+        : filterMatches(ctx.message.text, filter.pattern, filter.matchType, filter.ignoreCase),
     );
     if (!match) {
       await next();

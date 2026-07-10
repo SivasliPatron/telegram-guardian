@@ -1,5 +1,18 @@
 import safeRegex from 'safe-regex2';
 
+const LEETSPEAK_REPLACEMENTS: Readonly<Record<string, string>> = {
+  '0': 'o',
+  '1': 'i',
+  '3': 'e',
+  '4': 'a',
+  '5': 's',
+  '7': 't',
+  '8': 'b',
+  '!': 'i',
+  '@': 'a',
+  $: 's',
+};
+
 export type MatchType = 'EXACT' | 'CONTAINS' | 'REGEX';
 
 export function validateFilterPattern(pattern: string, matchType: MatchType): boolean {
@@ -24,4 +37,37 @@ export function filterMatches(
   if (matchType === 'CONTAINS') return candidate.includes(expected);
   if (!validateFilterPattern(pattern, 'REGEX')) return false;
   return new RegExp(pattern, ignoreCase ? 'iu' : 'u').test(text);
+}
+
+export function moderationTextVariants(text: string): string[] {
+  const normalized = text.normalize('NFKC').replace(/\p{Cf}/gu, '');
+  const leetspeak = normalized.replace(
+    /[0134578!@$]/gu,
+    (character) => LEETSPEAK_REPLACEMENTS[character] ?? character,
+  );
+  const withoutInnerSeparators = leetspeak.replace(
+    /(?<=[\p{L}\p{N}])[._*•·~-]+(?=[\p{L}\p{N}])/gu,
+    '',
+  );
+  const joinedSingleLetters = withoutInnerSeparators.replace(
+    /(^|[^\p{L}\p{N}])((?:[\p{L}\p{N}]\s+){2,}[\p{L}\p{N}])(?=$|[^\p{L}\p{N}])/gu,
+    (_match, prefix: string, sequence: string) => `${prefix}${sequence.replace(/\s+/gu, '')}`,
+  );
+  const collapsedRepetitions = joinedSingleLetters.replace(/([\p{L}\p{N}])\1{2,}/giu, '$1');
+  return [
+    ...new Set([
+      text,
+      normalized,
+      leetspeak,
+      withoutInnerSeparators,
+      joinedSingleLetters,
+      collapsedRepetitions,
+    ]),
+  ];
+}
+
+export function presetFilterMatches(text: string, pattern: string, ignoreCase: boolean): boolean {
+  return moderationTextVariants(text).some((variant) =>
+    filterMatches(variant, pattern, 'REGEX', ignoreCase),
+  );
 }
