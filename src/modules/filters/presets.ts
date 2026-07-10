@@ -104,6 +104,7 @@ export const PRESET_FILTERS: readonly PresetFilterDefinition[] = [
     label: 'Vulgäre Angriffe auf Religion – Türkisch',
     pattern: words(
       String.raw`(?:allahını|allahini|dinini|kitabını|kitabini|peygamberini|islamı|islami|kuranı|kurani|quranı|qurani)\s+sik(?:eyim|iyim|tim)`,
+      String.raw`dinini\s+du\s+hund`,
     ),
   },
 ] as const;
