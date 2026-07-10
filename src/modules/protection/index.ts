@@ -147,7 +147,19 @@ export function registerProtectionModule(dependencies: Dependencies): void {
     if (!ctx.group) throw new UserFacingError('error_group_only');
     await dependencies.permissions.requireAdmin(ctx, ctx.group.id);
     const value = commandArguments(ctx)[0]?.toLowerCase();
-    if (value !== 'on' && value !== 'off') throw new UserFacingError('error_reason');
+    if (value !== 'on' && value !== 'off') {
+      const settings = await dependencies.settings.get(ctx.group.id);
+      await ctx.reply(
+        translate(ctx.locale, 'antilink_status', {
+          status: translate(
+            ctx.locale,
+            settings.linkProtectionEnabled ? 'night_enabled' : 'night_disabled',
+          ),
+        }),
+        { parse_mode: 'HTML' },
+      );
+      return;
+    }
     await dependencies.settings.update(ctx.group.id, { linkProtectionEnabled: value === 'on' });
     await ctx.reply(translate(ctx.locale, 'setting_saved'));
   });

@@ -26,6 +26,8 @@ const de = {
   kicked: '👢 {user} wurde aus der Gruppe entfernt.',
   flood_action: 'Zu viele Nachrichten: {user} wurde vorübergehend stummgeschaltet.',
   link_deleted: 'Nicht erlaubte Werbung oder Kontaktdaten wurden entfernt.',
+  antilink_status:
+    'Linkschutz: {status}\nVerwendung: <code>/antilink on</code> oder <code>/antilink off</code>',
   setting_saved: 'Einstellung gespeichert.',
   domain_added: 'Die Domain wurde zur Ausnahmeliste hinzugefügt.',
   domain_removed: 'Die Domain wurde aus der Ausnahmeliste entfernt.',
