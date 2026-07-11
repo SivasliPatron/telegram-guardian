@@ -11,6 +11,7 @@ import {
   banAfterWarningThreshold,
   shouldApplyWarningBan,
 } from '../../services/warning-escalation.js';
+import { appendAdministratorMentions } from '../../services/admin-mentions.js';
 
 export function registerModerationModule(dependencies: Dependencies): ModerationService {
   const service = new ModerationService(dependencies);
@@ -40,15 +41,15 @@ export function registerModerationModule(dependencies: Dependencies): Moderation
     const count = await dependencies.database.warning.count({
       where: { groupId: ctx.group.id, userId: user.id, clearedAt: null, deletedAt: null },
     });
-    await ctx.reply(
-      translate(ctx.locale, 'warning_added', {
-        user: escapeHtml(user.firstName),
-        count,
-        max: settings.maxWarnings,
-        reason: escapeHtml(reason),
-      }),
-      { parse_mode: 'HTML' },
-    );
+    const warningMessage = translate(ctx.locale, 'warning_added', {
+      user: escapeHtml(user.firstName),
+      count,
+      max: settings.maxWarnings,
+      reason: escapeHtml(reason),
+    });
+    await ctx.reply(await appendAdministratorMentions(dependencies, ctx, warningMessage), {
+      parse_mode: 'HTML',
+    });
     await dependencies.adminLog.send(ctx.group.id, 'Verwarnung', {
       Nutzer: target.telegramId.toString(),
       Moderator: ctx.from.id,

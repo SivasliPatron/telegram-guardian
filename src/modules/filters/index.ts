@@ -27,6 +27,7 @@ import {
   banAfterWarningThreshold,
   shouldApplyWarningBan,
 } from '../../services/warning-escalation.js';
+import { appendAdministratorMentions } from '../../services/admin-mentions.js';
 
 async function applyAiWarning(
   dependencies: Dependencies,
@@ -64,15 +65,15 @@ async function applyAiWarning(
     }),
     dependencies.settings.get(ctx.group.id),
   ]);
-  await ctx.reply(
-    translate(ctx.locale, 'automatic_filter_warning', {
-      user: escapeHtml(displayName(ctx.from)),
-      count: warningCount,
-      max: settings.maxWarnings > 0 ? settings.maxWarnings : '∞',
-      reason: escapeHtml(reason),
-    }),
-    { parse_mode: 'HTML' },
-  );
+  const warningMessage = translate(ctx.locale, 'automatic_filter_warning', {
+    user: escapeHtml(displayName(ctx.from)),
+    count: warningCount,
+    max: settings.maxWarnings > 0 ? settings.maxWarnings : '∞',
+    reason: escapeHtml(reason),
+  });
+  await ctx.reply(await appendAdministratorMentions(dependencies, ctx, warningMessage), {
+    parse_mode: 'HTML',
+  });
   if (shouldApplyWarningBan(warningCount, settings.maxWarnings)) {
     await banAfterWarningThreshold(dependencies, {
       group: ctx.group,
@@ -346,15 +347,15 @@ export function registerFilterModule(dependencies: Dependencies): void {
         }),
         dependencies.settings.get(ctx.group.id),
       ]);
-      await ctx.reply(
-        translate(ctx.locale, 'automatic_filter_warning', {
-          user: escapeHtml(displayName(ctx.from)),
-          count: warningCount,
-          max: settings.maxWarnings > 0 ? settings.maxWarnings : '∞',
-          reason: escapeHtml(warningReason),
-        }),
-        { parse_mode: 'HTML' },
-      );
+      const warningMessage = translate(ctx.locale, 'automatic_filter_warning', {
+        user: escapeHtml(displayName(ctx.from)),
+        count: warningCount,
+        max: settings.maxWarnings > 0 ? settings.maxWarnings : '∞',
+        reason: escapeHtml(warningReason),
+      });
+      await ctx.reply(await appendAdministratorMentions(dependencies, ctx, warningMessage), {
+        parse_mode: 'HTML',
+      });
       if (shouldApplyWarningBan(warningCount, settings.maxWarnings)) {
         await banAfterWarningThreshold(dependencies, {
           group: ctx.group,
