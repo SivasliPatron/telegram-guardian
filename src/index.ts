@@ -18,6 +18,8 @@ import { startHealthServer } from './services/health.js';
 import { TargetResolver } from './services/target-resolver.js';
 import { InternalRole } from './generated/prisma/enums.js';
 import { AiModerationService } from './services/ai-moderation.js';
+import { InactivityCleanupService } from './services/inactivity-cleanup.js';
+import { memberActivityMiddleware } from './middleware/member-activity.js';
 
 const env = parseEnv(process.env);
 const logger = createLogger(env);
@@ -27,7 +29,23 @@ const bot = createBot(env);
 const settings = new SettingsService(database, redis);
 const permissions = new PermissionService(database, BigInt(env.OWNER_TELEGRAM_ID), redis);
 const adminLog = new AdminLogService(database, bot.api, logger);
-const jobs = new JobScheduler(database, redis, bot, logger, env.REDIS_URL, adminLog);
+const inactivityCleanup = new InactivityCleanupService(
+  database,
+  redis,
+  bot.api,
+  logger,
+  adminLog,
+  BigInt(env.OWNER_TELEGRAM_ID),
+);
+const jobs = new JobScheduler(
+  database,
+  redis,
+  bot,
+  logger,
+  env.REDIS_URL,
+  adminLog,
+  inactivityCleanup,
+);
 const targets = new TargetResolver(database, redis);
 const aiModeration = new AiModerationService(env, redis, logger);
 const dependencies: Dependencies = {
@@ -46,6 +64,7 @@ const dependencies: Dependencies = {
 
 bot.use(deduplicateUpdates(redis));
 bot.use(groupContextMiddleware(dependencies));
+bot.use(memberActivityMiddleware(dependencies));
 bot.use(commandRateLimit(redis));
 registerModules(dependencies);
 bot.catch((error) => handleBotError(error, logger, adminLog));
@@ -95,5 +114,8 @@ await bot.start({
     'my_chat_member',
     'chat_join_request',
   ],
-  onStart: ({ username }) => logger.info({ username }, 'Telegram-Bot ist bereit'),
+  onStart: ({ username }) => {
+    inactivityCleanup.markPollingStarted();
+    logger.info({ username }, 'Telegram-Bot ist bereit');
+  },
 });

@@ -13,6 +13,7 @@ import { registerCustomCommandsModule } from '../modules/custom-commands/index.j
 import { registerNameGuardModule } from '../modules/name-guard/index.js';
 import { registerAiChatModule } from '../modules/ai-chat/index.js';
 import { registerModerationReviewModule } from '../modules/moderation-review/index.js';
+import { registerInactivityModule } from '../modules/inactivity/index.js';
 
 export function registerModules(dependencies: Dependencies): void {
   registerNameGuardModule(dependencies);
@@ -22,6 +23,7 @@ export function registerModules(dependencies: Dependencies): void {
   registerWelcomeModule(dependencies);
   registerRulesModule(dependencies);
   registerModerationModule(dependencies);
+  registerInactivityModule(dependencies);
   registerRolesModule(dependencies);
   registerNightModeModule(dependencies);
   registerScheduledMessagesModule(dependencies);

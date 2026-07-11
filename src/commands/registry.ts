@@ -129,6 +129,12 @@ export const commandRegistry: readonly CommandDefinition[] = [
     category: 'Administratoren',
   },
   {
+    command: 'inaktiv',
+    description: 'Inaktive Mitglieder verwalten',
+    role: InternalRole.ADMIN,
+    category: 'Administratoren',
+  },
+  {
     command: 'setupgroup',
     description: 'Regeln und Schutz einrichten',
     role: InternalRole.ADMIN,

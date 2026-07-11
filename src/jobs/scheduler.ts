@@ -9,6 +9,7 @@ import { memberPermissions, mutedPermissions } from '../modules/moderation/permi
 import { ModerationReviewStatus } from '../generated/prisma/enums.js';
 import type { AdminLogService } from '../services/admin-log.js';
 import { enforceApprovedModerationReview } from '../services/moderation-review-enforcement.js';
+import type { InactivityCleanupService } from '../services/inactivity-cleanup.js';
 
 type TaskData = { type: 'delete-message'; chatId: string; messageId: number } | { type: 'tick' };
 
@@ -23,6 +24,7 @@ export class JobScheduler {
     private readonly logger: Logger,
     redisUrl: string,
     private readonly adminLog: AdminLogService,
+    private readonly inactivityCleanup: InactivityCleanupService,
   ) {
     const connection = redisConnectionOptions(redisUrl);
     this.queue = new Queue<TaskData, void, string, TaskData, void, string>('telegram-tasks', {
@@ -91,6 +93,7 @@ export class JobScheduler {
       this.expireModerationReviews(),
       this.reconcileApprovedModerationReviews(),
       this.redactResolvedModerationReviews(),
+      this.inactivityCleanup.run(),
     ]);
   }
 

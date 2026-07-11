@@ -27,6 +27,7 @@ const de = {
   error_forbidden_name:
     'Verwendung: /addforbiddenname NAME. Der Eintrag muss mindestens 3 Buchstaben oder Zahlen enthalten.',
   error_remove_forbidden_name: 'Verwendung: /removeforbiddenname EINTRAGS-ID',
+  error_inactivity_usage: 'Verwendung: /inaktiv, /inaktiv status, /inaktiv an oder /inaktiv aus',
   error_name_guard_empty: 'Füge zuerst mindestens einen Eintrag mit /addforbiddenname NAME hinzu.',
   rules_title: '📜 <b>Gruppenregeln</b>',
   rules_saved: 'Die Gruppenregeln wurden gespeichert.',
@@ -65,9 +66,18 @@ const de = {
   nightmode_status: 'Nachtmodus: {status}\nVerwendung: /nightmode on oder /nightmode off',
   night_enabled: 'aktiv',
   night_disabled: 'inaktiv',
+  inactivity_tracking_not_started: 'noch nicht gestartet',
+  inactivity_status:
+    '🧹 <b>Inaktivitätsbereinigung</b>\nStatus: <b>{status}</b>\nBekannte Mitglieder: {known}\nTrackingbeginn: {started}\n\nNach 7 Tagen ohne Gruppenbeitrag werden bekannte Mitglieder in der Gruppe markiert. Bleiben sie weitere 24 Stunden inaktiv, werden sie entfernt und können später erneut beitreten.\n\nAusgenommen sind Gruppeneigentümer, Telegram-Admins, interne Admins und Moderatoren, vertrauenswürdige Mitglieder sowie Bots. Telegram stellt dem Bot keine vollständige Mitgliederliste bereit; geprüft werden nur dem Bot bekannte Personen.\n\nHinweis: Beim technischen Kick löscht Telegram in Supergruppen auch die bisherigen Nachrichten der entfernten Person.\n\nVerwendung: <code>/inaktiv an</code> oder <code>/inaktiv aus</code>',
+  inactivity_enabled:
+    '✅ Die Inaktivitätsbereinigung ist aktiv. Die sichere Beobachtungsphase beginnt jetzt: erste Markierungen frühestens nach 7 Tagen, Entfernungen frühestens weitere 24 Stunden später.',
+  inactivity_already_enabled:
+    'ℹ️ Die Inaktivitätsbereinigung ist bereits aktiv. Der bestehende Trackingbeginn wurde nicht zurückgesetzt.',
+  inactivity_disabled:
+    '⏸ Die Inaktivitätsbereinigung ist ausgeschaltet. Offene Hinweise wurden für noch nicht entfernte Mitglieder abgebrochen; bereits begonnene Entfernungen werden sicher abgeschlossen.',
   log_channel_saved: 'Der Admin-Log-Kanal wurde erfolgreich eingerichtet.',
   privacy_data:
-    'Gespeichert: Telegram-ID, öffentlicher Profilname, Gruppenrolle, Beitritts-/Aktivitätszeit und Moderationshistorie. Potenziell kritische Nachrichten werden für die Admin-Prüfung höchstens 24 Stunden zwischengespeichert; bei einer bestätigten Verwarnung bleibt der Text als Moderationsgrund und automatischer Wortfilter erhalten, bis dieser Filter entfernt wird.',
+    'Gespeichert: Telegram-ID, öffentlicher Profilname, Gruppenrolle, Beitritts-/Aktivitätszeit, vorübergehende Inaktivitätsfristen und Moderationshistorie. Für die Inaktivitätsprüfung wird kein Nachrichteninhalt gespeichert. Potenziell kritische Nachrichten werden für die Admin-Prüfung höchstens 24 Stunden zwischengespeichert; bei einer bestätigten Verwarnung bleibt der Text als Moderationsgrund und automatischer Wortfilter erhalten, bis dieser Filter entfernt wird.',
   privacy_deleted:
     'Entfernbare Profildaten wurden anonymisiert. Sicherheitsrelevante Moderationshistorie bleibt mit minimaler Telegram-ID-Zuordnung erhalten.',
   userinfo:
