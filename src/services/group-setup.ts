@@ -24,8 +24,9 @@ Veröffentliche keine privaten Daten, Bilder oder Chatverläufe anderer Personen
 7. Keine unerlaubten Privatnachrichten
 Kein Mitglied darf eine andere Person aus der Gruppe per DM oder Privatnachricht kontaktieren, bevor diese Person dafür ausdrücklich im Gruppenchat ihre Erlaubnis erteilt hat. Nach einer nachvollziehbaren Meldung mit Beleg wird ein Verstoß ohne vorherige Verwarnung sofort mit dem Ausschluss aus der Gruppe geahndet.
 
-8. Absolutes Politikverbot
-Politische Inhalte jeder Art sind verboten – unabhängig von politischer Richtung, Partei, Person, Organisation, Land, Anlass oder Absicht. Dazu gehören politische Diskussionen, Lob, Kritik, Wahlwerbung, Propaganda, Parolen, Symbole und Provokationen.
+8. Politische Grenzen
+Verboten sind politische Propaganda, Rekrutierung, Verherrlichung, Führerkult sowie organisations- oder führerbezogene Parolen. Ebenso verboten sind politischer Hass, Drohungen und Aufrufe zu Gewalt. Bezüge zu Organisationen und Akteuren wie PKK, Apo beziehungsweise Abdullah Öcalan, Erdoğan oder Bozkurt werden besonders streng geprüft.
+Neutrale Angaben zu Ländern, Regionen, Herkunft, Reisen, Geografie, Sprachen und Kultur bleiben erlaubt. Dazu gehören einzelne Begriffe wie „Kurdistan“ oder „Türkei“, neutrale Reisesätze sowie allgemeine Aussagen wie „Free Kurdistan“ und „Free Türkei“, solange sie nicht mit verbotenen Organisationen oder Führungspersonen, Propaganda, Hass, Drohungen oder Gewalt verbunden werden.
 
 9. Moderation
 Anweisungen des Admin-Teams sind zu beachten. Regelverstöße können zur Löschung der Nachricht, Verwarnung, Stummschaltung oder Sperre führen. Ab der dritten aktiven Verwarnung erfolgt automatisch ein dauerhafter Ban aus der Gruppe. Verstöße gegen das Verbot unerlaubter Privatnachrichten führen unmittelbar zum Ausschluss ohne vorherige Verwarnung.`;

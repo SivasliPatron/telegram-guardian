@@ -8,10 +8,12 @@ describe('Standard-Gruppenregeln', () => {
     expect(DEFAULT_GROUP_RULES).toContain('religiösen Symbole');
   });
 
-  it('verbietet Politik ausnahmslos und ohne Kritik-Ausnahme', () => {
-    expect(DEFAULT_GROUP_RULES).toContain('Absolutes Politikverbot');
-    expect(DEFAULT_GROUP_RULES).toContain('Politische Inhalte jeder Art sind verboten');
-    expect(DEFAULT_GROUP_RULES).not.toContain('Kritik ist erlaubt');
+  it('verbietet gefährliche politische Inhalte, aber keine neutralen Ortsangaben', () => {
+    expect(DEFAULT_GROUP_RULES).toContain('Politische Grenzen');
+    expect(DEFAULT_GROUP_RULES).toContain('politische Propaganda');
+    expect(DEFAULT_GROUP_RULES).toContain('„Free Kurdistan“');
+    expect(DEFAULT_GROUP_RULES).toContain('„Free Türkei“');
+    expect(DEFAULT_GROUP_RULES).not.toContain('Politische Inhalte jeder Art sind verboten');
   });
 
   it('verlangt eine vorherige DM-Erlaubnis im Gruppenchat', () => {

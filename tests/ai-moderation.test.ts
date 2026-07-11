@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { decideAiModeration, decideDisplayNameModeration } from '../src/services/ai-moderation.js';
+import {
+  applyMessagePolicyOverrides,
+  decideAiModeration,
+  decideDisplayNameModeration,
+  isExplicitlyAllowedGeographicStatement,
+} from '../src/services/ai-moderation.js';
 
 describe('KI-Moderation', () => {
   it('lässt neutrale oder unsichere Bewertungen durch', () => {
@@ -63,5 +68,51 @@ describe('KI-Moderation', () => {
         0.75,
       ),
     ).toBe('warn');
+  });
+
+  it.each([
+    'Kurdistan',
+    'Türkei',
+    'Free Kurdistan',
+    'Free Türkei',
+    'Ich besuche morgen Kurdistan',
+    'Ich will morgen Kurdistan besuchen',
+    'Ich komme aus der Türkei',
+    'Ich will morgen Kurdistsn besuchen',
+  ])('erkennt eine ausdrücklich erlaubte geografische Aussage: %s', (message) => {
+    expect(isExplicitlyAllowedGeographicStatement(message)).toBe(true);
+  });
+
+  it.each(['Free Kurdistan PKK', 'Biji Apo', 'Kurdistan gehört der PKK', 'Free Türkei Erdoğan'])(
+    'erlaubt problematische Zusätze nicht automatisch: %s',
+    (message) => {
+      expect(isExplicitlyAllowedGeographicStatement(message)).toBe(false);
+    },
+  );
+
+  it('überschreibt eine politische KI-Fehlbewertung für einen neutralen Reisesatz', () => {
+    expect(
+      applyMessagePolicyOverrides('Ich besuche morgen Kurdistan', {
+        violation: true,
+        category: 'political',
+        confidence: 1,
+        reason: 'Falsch als politisch eingestuft',
+      }),
+    ).toEqual({
+      violation: false,
+      category: 'none',
+      confidence: 1,
+      reason: 'Neutrale geografische oder allgemeine Aussage ohne verbotenen politischen Bezug.',
+    });
+  });
+
+  it('überschreibt keine Beleidigung trotz geografischem Begriff', () => {
+    const result = {
+      violation: true,
+      category: 'insult' as const,
+      confidence: 0.99,
+      reason: 'Beleidigung',
+    };
+    expect(applyMessagePolicyOverrides('Kurdistan', result)).toEqual(result);
   });
 });
