@@ -4,6 +4,7 @@ import {
   decideAiModeration,
   decideDisplayNameModeration,
   isExplicitlyAllowedGeographicStatement,
+  limitModerationReason,
 } from '../src/services/ai-moderation.js';
 
 describe('KI-Moderation', () => {
@@ -114,5 +115,11 @@ describe('KI-Moderation', () => {
       reason: 'Beleidigung',
     };
     expect(applyMessagePolicyOverrides('Kurdistan', result)).toEqual(result);
+  });
+
+  it('kürzt lange Gemini-Begründungen, statt die gesamte Moderation zu verwerfen', () => {
+    const reason = limitModerationReason(`Sehr lange Begründung ${'x'.repeat(300)}`);
+    expect(reason).toHaveLength(180);
+    expect(reason.endsWith('…')).toBe(true);
   });
 });
