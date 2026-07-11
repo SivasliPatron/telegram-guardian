@@ -12,7 +12,7 @@ import {
   escapeHtml,
   quotedMessageReason,
 } from '../../utils/telegram.js';
-import { filterMatches, presetFilterMatches, validateFilterPattern } from '../../utils/filter.js';
+import { configuredFilterMatches, validateFilterPattern } from '../../utils/filter.js';
 import { UserFacingError } from '../../utils/errors.js';
 import { translate } from '../../locales/index.js';
 import { ensureUser, findOrCreateUserByTelegramId } from '../../database/repositories.js';
@@ -29,6 +29,13 @@ import {
 } from '../../services/warning-escalation.js';
 import { appendAdministratorMentions } from '../../services/admin-mentions.js';
 import { requestModerationReview } from '../moderation-review/index.js';
+import { isLearnedReviewFilterKey } from '../../services/learned-filter.js';
+
+function filterListLabel(value: string, maximumLength = 96): string {
+  return value.length > maximumLength
+    ? `${value.slice(0, Math.max(1, maximumLength - 1)).trimEnd()}…`
+    : value;
+}
 
 async function applyAiWarning(
   dependencies: Dependencies,
@@ -215,14 +222,19 @@ export function registerFilterModule(dependencies: Dependencies): void {
     await dependencies.permissions.requireAdmin(ctx, ctx.group.id);
     const filters = await dependencies.database.filter.findMany({
       where: { groupId: ctx.group.id, deletedAt: null },
-      take: 50,
+      take: 25,
       orderBy: { createdAt: 'desc' },
     });
     await ctx.reply(
       filters
         .map((filter) => {
           const preset = PRESET_FILTERS.find(({ key }) => key === filter.presetKey);
-          return `${filter.id}: ${filter.matchType}/${filter.action} – ${preset?.label ?? filter.pattern}`;
+          const label =
+            preset?.label ??
+            (isLearnedReviewFilterKey(filter.learnedKey)
+              ? `Gelernter Satz: „${filter.pattern}“`
+              : filter.pattern);
+          return `${filter.id}: ${filter.matchType}/${filter.action} – ${filterListLabel(label)}`;
         })
         .join('\n') || '–',
     );
@@ -260,11 +272,7 @@ export function registerFilterModule(dependencies: Dependencies): void {
           },
         });
     if (!cached) await dependencies.redis.set(filterCacheKey, JSON.stringify(filters), 'EX', 60);
-    const match = filters.find((filter) =>
-      filter.presetKey
-        ? presetFilterMatches(ctx.message.text, filter.pattern, filter.ignoreCase)
-        : filterMatches(ctx.message.text, filter.pattern, filter.matchType, filter.ignoreCase),
-    );
+    const match = filters.find((filter) => configuredFilterMatches(ctx.message.text, filter));
     if (!match) {
       const role = await dependencies.permissions.roleFor(ctx, ctx.group.id, BigInt(ctx.from.id));
       if (hasMinimumRole(role, InternalRole.TRUSTED)) {

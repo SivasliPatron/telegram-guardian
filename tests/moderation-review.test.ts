@@ -46,6 +46,7 @@ describe('Admin-Prüfung für KI-Grenzfälle', () => {
     expect(message).toContain('h s Menschen in Afrika haben &lt;kein&gt; Wasser');
     expect(message).toContain('60 %');
     expect(message).toContain('noch keine Verwarnung');
+    expect(message).toContain('als automatischer Wortfilter gespeichert');
     expect(message).not.toContain('<kein>');
   });
 });
