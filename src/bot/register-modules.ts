@@ -12,10 +12,12 @@ import { registerInformationModule } from '../modules/information/index.js';
 import { registerCustomCommandsModule } from '../modules/custom-commands/index.js';
 import { registerNameGuardModule } from '../modules/name-guard/index.js';
 import { registerAiChatModule } from '../modules/ai-chat/index.js';
+import { registerModerationReviewModule } from '../modules/moderation-review/index.js';
 
 export function registerModules(dependencies: Dependencies): void {
   registerNameGuardModule(dependencies);
   registerProtectionModule(dependencies);
+  registerModerationReviewModule(dependencies);
   registerFilterModule(dependencies);
   registerWelcomeModule(dependencies);
   registerRulesModule(dependencies);
