@@ -12,7 +12,7 @@ Ein modularer Moderationsbot für große Telegram-Supergruppen. Die Anwendung l�
 - Link-, Einladungs-, Kurzlink-, Username-, Weiterleitungs-, Telefon- und E-Mail-Schutz mit gecachten Domain-Ausnahmen
 - Sichere Wortfilter mit `exact`, `contains` und geprüften regulären Ausdrücken sowie Aktionen `delete`, `warn`, `mute`, `log`, `reply`
 - Verwaltete Standardfilter für deutsche, türkische und kurmancî Beleidigungen sowie vulgäre Angriffe auf islamische Heiligtümer; Leetspeak, unsichtbare Zeichen, Buchstabenwiederholungen und einfache Trennzeichen werden normalisiert, während neutrale Religionsbegriffe erlaubt bleiben
-- KI-Grenzfälle mit markierter Admin-Prüfung und einmalig entscheidbaren Buttons für „Verwarnung: Ja/Nein“; bestätigte Sätze werden als exakte automatische Wortfilter gelernt, klare Verstöße bleiben automatisch moderiert
+- Noch nicht gelernte KI-Texttreffer mit markierter Admin-Prüfung und einmalig entscheidbaren Buttons für „Verwarnung: Ja/Nein“; erst bestätigte Sätze werden als exakte automatische Wortfilter gelernt und bei späteren identischen Nachrichten automatisch verwarnt
 - Konfigurierbarer Namensschutz für Beitrittsanfragen, neue Mitglieder und spätere Profiländerungen
 - Persistenter Nachtmodus und automatische Nachrichten mit IANA-Zeitzonen
 - Optionale Inaktivitätsbereinigung: bekannte Mitglieder werden nach 7 Tagen ohne Gruppenbeitrag markiert und nach weiteren 24 Stunden ohne Aktivität entfernt

@@ -15,6 +15,15 @@ const LEETSPEAK_REPLACEMENTS: Readonly<Record<string, string>> = {
 
 export type MatchType = 'EXACT' | 'CONTAINS' | 'REGEX';
 
+export function canonicalizeLearnedFilterText(text: string): string {
+  return text
+    .normalize('NFKC')
+    .replace(/\p{Cf}/gu, '')
+    .trim()
+    .replace(/\s+/gu, ' ')
+    .toLocaleLowerCase();
+}
+
 export function validateFilterPattern(pattern: string, matchType: MatchType): boolean {
   if (pattern.length < 1 || pattern.length > 200) return false;
   if (matchType !== 'REGEX') return true;
@@ -76,11 +85,15 @@ export function configuredFilterMatches(
   text: string,
   filter: {
     presetKey?: string | null;
+    learnedKey?: string | null;
     pattern: string;
     matchType: MatchType;
     ignoreCase: boolean;
   },
 ): boolean {
+  if (filter.learnedKey && filter.matchType === 'EXACT') {
+    return canonicalizeLearnedFilterText(text) === canonicalizeLearnedFilterText(filter.pattern);
+  }
   return filter.presetKey && filter.matchType === 'REGEX'
     ? presetFilterMatches(text, filter.pattern, filter.ignoreCase)
     : filterMatches(text, filter.pattern, filter.matchType, filter.ignoreCase);
