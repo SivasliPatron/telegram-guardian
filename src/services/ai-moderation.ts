@@ -5,6 +5,19 @@ import { z } from 'zod';
 import type { Env } from '../config/env.js';
 import type { RedisClient } from './redis.js';
 
+export function limitModerationReason(reason: string, maximumLength = 180): string {
+  const normalized = reason.trim();
+  return normalized.length > maximumLength
+    ? `${normalized.slice(0, Math.max(1, maximumLength - 1)).trimEnd()}…`
+    : normalized;
+}
+
+const moderationReasonSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .transform((reason) => limitModerationReason(reason));
+
 const moderationResultSchema = z.object({
   violation: z.boolean(),
   category: z.enum([
@@ -18,7 +31,7 @@ const moderationResultSchema = z.object({
     'harassment',
   ]),
   confidence: z.number().min(0).max(1),
-  reason: z.string().trim().min(1).max(180),
+  reason: moderationReasonSchema,
 });
 
 export type AiModerationResult = z.infer<typeof moderationResultSchema>;
@@ -28,7 +41,7 @@ const displayNameResultSchema = z.object({
   violation: z.boolean(),
   category: z.enum(['none', 'insult', 'political']),
   confidence: z.number().min(0).max(1),
-  reason: z.string().trim().min(1).max(180),
+  reason: moderationReasonSchema,
 });
 
 export type DisplayNameModerationResult = z.infer<typeof displayNameResultSchema>;
