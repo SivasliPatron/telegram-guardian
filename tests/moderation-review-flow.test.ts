@@ -8,6 +8,7 @@ import {
 import type { AiModerationResult } from '../src/services/ai-moderation.js';
 import type { BotContext } from '../src/types/context.js';
 import type { Dependencies } from '../src/types/dependencies.js';
+import { learnedReviewFilterKey } from '../src/services/learned-filter.js';
 
 type ReviewStatus = (typeof ModerationReviewStatus)[keyof typeof ModerationReviewStatus];
 type CallbackHandler = (ctx: BotContext) => Promise<void>;
@@ -101,9 +102,14 @@ function createReviewRecord(): ReviewRecord {
   };
 }
 
-function createHarness(role: InternalRole = InternalRole.ADMIN) {
+function createHarness(
+  role: InternalRole = InternalRole.ADMIN,
+  existingFilter: { id: string; pattern: string } | null = null,
+  reviewMessageText = 'h s Menschen in Afrika haben kein Wasser',
+) {
   let callbackHandler: CallbackHandler | undefined;
   let review: ReviewRecord | null = createReviewRecord();
+  review.messageText = reviewMessageText;
 
   const reviewFindUnique = vi.fn((input: { where: Record<string, unknown> }) =>
     Promise.resolve('groupId_originalMessageId' in input.where ? null : review),
@@ -144,10 +150,13 @@ function createHarness(role: InternalRole = InternalRole.ADMIN) {
   const reviewDeleteMany = vi.fn().mockResolvedValue({ count: 1 });
   const warningCreate = vi.fn().mockResolvedValue({ id: 'warning-1' });
   const actionCreate = vi.fn().mockResolvedValue({ id: 'action-1' });
+  const filterUpsert = vi.fn().mockResolvedValue({ id: 'learned-filter-1' });
+  const filterFindMany = vi.fn().mockResolvedValue(existingFilter ? [existingFilter] : []);
   const transaction = {
     moderationReview: { updateMany: reviewUpdateMany, update: reviewUpdate },
     warning: { create: warningCreate },
     moderationAction: { create: actionCreate },
+    filter: { findMany: filterFindMany, upsert: filterUpsert },
   };
   const runTransaction = vi.fn((operation: (client: typeof transaction) => Promise<unknown>) =>
     operation(transaction),
@@ -193,6 +202,7 @@ function createHarness(role: InternalRole = InternalRole.ADMIN) {
   );
   const adminLogSend = vi.fn().mockResolvedValue(undefined);
   const roleFor = vi.fn().mockResolvedValue(role);
+  const redisDel = vi.fn().mockResolvedValue(1);
 
   const dependencies = {
     bot: {
@@ -206,7 +216,7 @@ function createHarness(role: InternalRole = InternalRole.ADMIN) {
     env: { OWNER_TELEGRAM_ID: '999999' },
     redis: {
       set: vi.fn().mockResolvedValue('OK'),
-      del: vi.fn().mockResolvedValue(1),
+      del: redisDel,
     },
     database: {
       user: { upsert: userUpsert },
@@ -269,6 +279,9 @@ function createHarness(role: InternalRole = InternalRole.ADMIN) {
     reviewUpdateMany,
     warningCreate,
     actionCreate,
+    filterUpsert,
+    filterFindMany,
+    redisDel,
     deleteMessage,
     getChatAdministrators,
     adminLogSend,
@@ -320,7 +333,40 @@ describe('Admin-Prüfablauf für kritische KI-Grenzfälle', () => {
     ]);
     expect(options.reply_parameters.message_id).toBe(42);
     expect(harness.warningCreate).not.toHaveBeenCalled();
+    expect(harness.filterUpsert).not.toHaveBeenCalled();
     expect(harness.deleteMessage).not.toHaveBeenCalled();
+  });
+
+  it('speichert lange Sätze vollständig, kürzt aber den sichtbaren Prüfhilfetext', async () => {
+    const harness = createHarness();
+    const longText = `h s ${'x'.repeat(1_000)}`;
+    const reply = vi.fn().mockResolvedValue({ message_id: 501 });
+    const context = {
+      group: { id: 'group-db-id', telegramId: -100123n, title: 'Testgruppe' },
+      from: { id: 99, is_bot: false, first_name: 'Zielnutzer', username: 'ziel' },
+      message: { message_id: 42, text: longText },
+      api: { getChatAdministrators: harness.getChatAdministrators },
+      reply,
+    } as unknown as BotContext;
+    const result: AiModerationResult = {
+      violation: false,
+      reviewRecommended: true,
+      category: 'insult',
+      confidence: 0.6,
+      reason: 'Möglicherweise verschleierte beleidigende Abkürzung',
+    };
+
+    await requestModerationReview(harness.dependencies, context, result, longText);
+
+    const createCall = harness.reviewCreate.mock.calls[0];
+    if (!createCall) throw new Error('Prüffall wurde nicht gespeichert');
+    const createInput = createCall[0];
+    expect(createInput.data.messageText).toBe(longText);
+    const replyCall = reply.mock.calls[0];
+    if (!replyCall) throw new Error('Prüfnachricht wurde nicht gesendet');
+    const prompt = replyCall[0] as string;
+    expect(prompt).toContain('…');
+    expect(prompt).not.toContain('x'.repeat(900));
   });
 
   it('lässt Nicht-Admins keine Entscheidung treffen', async () => {
@@ -336,6 +382,7 @@ describe('Admin-Prüfablauf für kritische KI-Grenzfälle', () => {
     expect(harness.getReview()?.status).toBe(ModerationReviewStatus.PENDING);
     expect(harness.reviewUpdateMany).not.toHaveBeenCalled();
     expect(harness.warningCreate).not.toHaveBeenCalled();
+    expect(harness.filterUpsert).not.toHaveBeenCalled();
     expect(harness.deleteMessage).not.toHaveBeenCalled();
   });
 
@@ -353,6 +400,7 @@ describe('Admin-Prüfablauf für kritische KI-Grenzfälle', () => {
     expect(callback.editMessageText.mock.calls[0]?.[0]).not.toContain('h s Menschen');
     expect(harness.warningCreate).not.toHaveBeenCalled();
     expect(harness.actionCreate).not.toHaveBeenCalled();
+    expect(harness.filterUpsert).not.toHaveBeenCalled();
     expect(harness.deleteMessage).not.toHaveBeenCalled();
   });
 
@@ -364,6 +412,45 @@ describe('Admin-Prüfablauf für kritische KI-Grenzfälle', () => {
 
     expect(harness.getReview()?.status).toBe(ModerationReviewStatus.APPROVED);
     expect(harness.warningCreate).toHaveBeenCalledOnce();
+    expect(harness.filterFindMany).toHaveBeenCalledWith({
+      where: {
+        groupId: 'group-db-id',
+        matchType: 'EXACT',
+        action: 'WARN',
+        ignoreCase: true,
+        enabled: true,
+        deletedAt: null,
+      },
+      select: { id: true, pattern: true },
+    });
+    expect(harness.filterUpsert).toHaveBeenCalledOnce();
+    expect(harness.filterUpsert).toHaveBeenCalledWith({
+      where: {
+        groupId_learnedKey: {
+          groupId: 'group-db-id',
+          learnedKey: learnedReviewFilterKey('h s Menschen in Afrika haben kein Wasser'),
+        },
+      },
+      create: {
+        groupId: 'group-db-id',
+        learnedKey: learnedReviewFilterKey('h s Menschen in Afrika haben kein Wasser'),
+        pattern: 'h s Menschen in Afrika haben kein Wasser',
+        matchType: 'EXACT',
+        action: 'WARN',
+        ignoreCase: true,
+        enabled: true,
+        createdByTelegramId: 7n,
+      },
+      update: {
+        pattern: 'h s Menschen in Afrika haben kein Wasser',
+        matchType: 'EXACT',
+        action: 'WARN',
+        ignoreCase: true,
+        enabled: true,
+        deletedAt: null,
+        createdByTelegramId: 7n,
+      },
+    });
     expect(harness.warningCreate).toHaveBeenCalledWith({
       data: {
         groupId: 'group-db-id',
@@ -380,6 +467,36 @@ describe('Admin-Prüfablauf für kritische KI-Grenzfälle', () => {
       text: 'Entscheidung wird verarbeitet …',
     });
     expect(callback.editMessageText.mock.calls[0]?.[0]).not.toContain('h s Menschen');
+    expect(callback.editMessageText.mock.calls[0]?.[0]).toContain('künftig automatisch gefiltert');
+    expect(harness.redisDel).toHaveBeenCalledWith('filters:group-db-id');
+  });
+
+  it('verwendet einen bereits vorhandenen identischen EXACT/WARN-Filter wieder', async () => {
+    const harness = createHarness(InternalRole.ADMIN, {
+      id: 'existing-filter',
+      pattern: 'H S MENSCHEN IN AFRIKA HABEN KEIN WASSER',
+    });
+    const callback = harness.callbackContext('approve');
+
+    await harness.handler()(callback.context);
+
+    expect(harness.filterFindMany).toHaveBeenCalledOnce();
+    expect(harness.filterUpsert).not.toHaveBeenCalled();
+    expect(harness.warningCreate).toHaveBeenCalledOnce();
+    expect(harness.redisDel).toHaveBeenCalledWith('filters:group-db-id');
+  });
+
+  it('behandelt Prozent- und Unterstrichzeichen beim Vergleich als normale Zeichen', async () => {
+    const harness = createHarness(
+      InternalRole.ADMIN,
+      { id: 'similar-filter', pattern: 'Rabatt 100X heuteZ' },
+      'Rabatt 100% heute_',
+    );
+
+    await harness.handler()(harness.callbackContext('approve').context);
+
+    expect(harness.filterFindMany).toHaveBeenCalledOnce();
+    expect(harness.filterUpsert).toHaveBeenCalledOnce();
   });
 
   it('kann auch bei zwei gleichzeitigen Ja-Klicks keine Sanktion duplizieren', async () => {
@@ -391,6 +508,7 @@ describe('Admin-Prüfablauf für kritische KI-Grenzfälle', () => {
 
     expect(harness.warningCreate).toHaveBeenCalledOnce();
     expect(harness.actionCreate).toHaveBeenCalledOnce();
+    expect(harness.filterUpsert).toHaveBeenCalledOnce();
     expect(harness.deleteMessage).toHaveBeenCalledOnce();
     expect(first.answerCallbackQuery).toHaveBeenCalled();
     expect(second.answerCallbackQuery).toHaveBeenCalled();

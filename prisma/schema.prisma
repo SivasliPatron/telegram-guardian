@@ -230,6 +230,7 @@ model Filter {
   groupId             String
   group               TelegramGroup    @relation(fields: [groupId], references: [id], onDelete: Cascade)
   presetKey           String?
+  learnedKey          String?
   pattern             String
   matchType           FilterMatchType
   action              FilterActionType
@@ -243,6 +244,7 @@ model Filter {
   deletedAt           DateTime?
 
   @@unique([groupId, presetKey])
+  @@unique([groupId, learnedKey])
   @@index([groupId, enabled, deletedAt])
 }
 

@@ -67,7 +67,7 @@ const de = {
   night_disabled: 'inaktiv',
   log_channel_saved: 'Der Admin-Log-Kanal wurde erfolgreich eingerichtet.',
   privacy_data:
-    'Gespeichert: Telegram-ID, öffentlicher Profilname, Gruppenrolle, Beitritts-/Aktivitätszeit und Moderationshistorie. Potenziell kritische Nachrichten werden für die Admin-Prüfung höchstens 24 Stunden zwischengespeichert; bei einer bestätigten Verwarnung bleibt der Text als Moderationsgrund erhalten.',
+    'Gespeichert: Telegram-ID, öffentlicher Profilname, Gruppenrolle, Beitritts-/Aktivitätszeit und Moderationshistorie. Potenziell kritische Nachrichten werden für die Admin-Prüfung höchstens 24 Stunden zwischengespeichert; bei einer bestätigten Verwarnung bleibt der Text als Moderationsgrund und automatischer Wortfilter erhalten, bis dieser Filter entfernt wird.',
   privacy_deleted:
     'Entfernbare Profildaten wurden anonymisiert. Sicherheitsrelevante Moderationshistorie bleibt mit minimaler Telegram-ID-Zuordnung erhalten.',
   userinfo:

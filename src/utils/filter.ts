@@ -71,3 +71,17 @@ export function presetFilterMatches(text: string, pattern: string, ignoreCase: b
     filterMatches(variant, pattern, 'REGEX', ignoreCase),
   );
 }
+
+export function configuredFilterMatches(
+  text: string,
+  filter: {
+    presetKey?: string | null;
+    pattern: string;
+    matchType: MatchType;
+    ignoreCase: boolean;
+  },
+): boolean {
+  return filter.presetKey && filter.matchType === 'REGEX'
+    ? presetFilterMatches(text, filter.pattern, filter.ignoreCase)
+    : filterMatches(text, filter.pattern, filter.matchType, filter.ignoreCase);
+}

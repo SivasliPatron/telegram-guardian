@@ -1,6 +1,7 @@
 import { InlineKeyboard } from 'grammy';
 import {
   FilterActionType,
+  FilterMatchType,
   ModerationActionType,
   ModerationReviewStatus,
 } from '../../generated/prisma/enums.js';
@@ -8,13 +9,15 @@ import { translate } from '../../locales/index.js';
 import { appendAdministratorMentions } from '../../services/admin-mentions.js';
 import type { AiModerationResult } from '../../services/ai-moderation.js';
 import { enforceApprovedModerationReview } from '../../services/moderation-review-enforcement.js';
+import { learnedReviewFilterKey } from '../../services/learned-filter.js';
 import type { BotContext } from '../../types/context.js';
 import type { Dependencies } from '../../types/dependencies.js';
 import { ensureUser } from '../../database/repositories.js';
 import { displayName, escapeHtml, quotedMessageReason } from '../../utils/telegram.js';
 
 const REVIEW_LIFETIME_MS = 24 * 60 * 60 * 1_000;
-const REVIEW_TEXT_LIMIT = 700;
+const REVIEW_DISPLAY_TEXT_LIMIT = 700;
+const REVIEW_STORED_TEXT_LIMIT = 4_096;
 const REVIEW_CALLBACK_PATTERN = /^mr:(y|n):([a-z0-9]+)$/u;
 
 export type ModerationReviewDecision = 'approve' | 'dismiss';
@@ -57,12 +60,13 @@ export function formatModerationReviewMessage(input: {
     '🔎 <b>Admin-Prüfung erforderlich</b>',
     '',
     `<b>Nutzer:</b> ${escapeHtml(input.user)}`,
-    `<b>Nachricht:</b> ${escapeHtml(quotedMessageReason(input.messageText, REVIEW_TEXT_LIMIT))}`,
+    `<b>Nachricht:</b> ${escapeHtml(quotedMessageReason(input.messageText, REVIEW_DISPLAY_TEXT_LIMIT))}`,
     `<b>Möglicher Bereich:</b> ${escapeHtml(input.category)}`,
     `<b>KI-Einschätzung:</b> ${Math.round(input.confidence * 100)} %`,
     `<b>Hinweis:</b> ${escapeHtml(input.reason)}`,
     '',
     'Die Nachricht wurde noch nicht gelöscht und es wurde noch keine Verwarnung vergeben. Bitte entscheidet mit einem Button.',
+    'Bei „Verwarnung: Ja“ wird genau dieser Satz zusätzlich als automatischer Wortfilter gespeichert.',
   ].join('\n');
 }
 
@@ -83,7 +87,7 @@ export async function requestModerationReview(
   if (existing) return;
 
   const target = await ensureUser(dependencies.database, ctx.from);
-  const storedText = messageText.trim().slice(0, REVIEW_TEXT_LIMIT);
+  const storedText = messageText.trim().slice(0, REVIEW_STORED_TEXT_LIMIT);
   const review = await dependencies.database.moderationReview.create({
     data: {
       groupId: ctx.group.id,
@@ -267,8 +271,10 @@ export function registerModerationReviewModule(dependencies: Dependencies): void
       return;
     }
 
-    const reason = quotedMessageReason(review.messageText, REVIEW_TEXT_LIMIT);
+    const reviewedMessageText = review.messageText;
+    const reason = quotedMessageReason(reviewedMessageText, REVIEW_DISPLAY_TEXT_LIMIT);
     const groupId = ctx.group.id;
+    const learnedFilterKey = learnedReviewFilterKey(reviewedMessageText);
     await ctx.answerCallbackQuery({ text: 'Entscheidung wird verarbeitet …' });
     const approved = await dependencies.database.$transaction(async (transaction) => {
       const decisionTime = new Date();
@@ -286,6 +292,46 @@ export function registerModerationReviewModule(dependencies: Dependencies): void
         },
       });
       if (claimed.count !== 1) return null;
+      const existingFilters = await transaction.filter.findMany({
+        where: {
+          groupId,
+          matchType: FilterMatchType.EXACT,
+          action: FilterActionType.WARN,
+          ignoreCase: true,
+          enabled: true,
+          deletedAt: null,
+        },
+        select: { id: true, pattern: true },
+      });
+      const existingFilter = existingFilters.find(
+        (filter) => filter.pattern.toLocaleLowerCase() === reviewedMessageText.toLocaleLowerCase(),
+      );
+      const automaticFilter =
+        existingFilter ??
+        (await transaction.filter.upsert({
+          where: {
+            groupId_learnedKey: { groupId, learnedKey: learnedFilterKey },
+          },
+          create: {
+            groupId,
+            learnedKey: learnedFilterKey,
+            pattern: reviewedMessageText,
+            matchType: FilterMatchType.EXACT,
+            action: FilterActionType.WARN,
+            ignoreCase: true,
+            enabled: true,
+            createdByTelegramId: reviewer.telegramId,
+          },
+          update: {
+            pattern: reviewedMessageText,
+            matchType: FilterMatchType.EXACT,
+            action: FilterActionType.WARN,
+            ignoreCase: true,
+            enabled: true,
+            deletedAt: null,
+            createdByTelegramId: reviewer.telegramId,
+          },
+        }));
       const warning = await transaction.warning.create({
         data: {
           groupId,
@@ -314,16 +360,27 @@ export function registerModerationReviewModule(dependencies: Dependencies): void
               confidence: review.aiConfidence,
               reason: review.aiReason,
             },
-            adminReview: { id: review.id, decision: 'approved' },
+            adminReview: {
+              id: review.id,
+              decision: 'approved',
+              learnedFilterId: automaticFilter.id,
+            },
           },
         },
       });
-      return warning;
+      return { automaticFilter, warning };
     });
 
     if (!approved) {
       return;
     }
+
+    await dependencies.redis.del(`filters:${ctx.group.id}`).catch((error: unknown) => {
+      dependencies.logger.warn(
+        { err: error, groupId: ctx.group?.id, filterId: approved.automaticFilter.id },
+        'Der Wortfilter-Cache konnte nach der Admin-Entscheidung nicht geleert werden',
+      );
+    });
 
     let enforcement;
     try {
@@ -332,7 +389,7 @@ export function registerModerationReviewModule(dependencies: Dependencies): void
       await finishReviewMessage(
         dependencies,
         ctx,
-        `⚠️ ${displayName(ctx.from)}: Verwarnung erteilt.`,
+        `⚠️ ${displayName(ctx.from)}: Verwarnung erteilt. Dieser Satz wird künftig automatisch gefiltert.`,
       );
     }
 
@@ -383,6 +440,7 @@ export function registerModerationReviewModule(dependencies: Dependencies): void
       Admin: ctx.from.id,
       Grund: reason,
       Anzahl: warningCount,
+      Wortfilter: approved.automaticFilter.id,
       Prüfung: review.id,
     });
   });
