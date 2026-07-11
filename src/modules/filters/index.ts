@@ -10,6 +10,7 @@ import {
   commandRemainder,
   displayName,
   escapeHtml,
+  quotedMessageReason,
 } from '../../utils/telegram.js';
 import { filterMatches, presetFilterMatches, validateFilterPattern } from '../../utils/filter.js';
 import { UserFacingError } from '../../utils/errors.js';
@@ -32,13 +33,17 @@ async function applyAiWarning(
   ctx: BotContext,
   result: AiModerationResult,
   mediaType: 'text' | 'audio',
+  messageText?: string,
 ): Promise<void> {
   if (!ctx.group || !ctx.from || !ctx.message) return;
   const user = await findOrCreateUserByTelegramId(dependencies.database, BigInt(ctx.from.id));
   await ctx.deleteMessage();
   const me = await ctx.api.getMe();
   const moderator = await ensureUser(dependencies.database, me);
-  const reason = `Gemini-${mediaType === 'audio' ? 'Audio' : 'Text'}: ${result.reason}`;
+  const reason =
+    mediaType === 'text' && messageText
+      ? quotedMessageReason(messageText)
+      : `Sprachnachricht: ${result.reason}`;
   await dependencies.database.warning.create({
     data: {
       groupId: ctx.group.id,
@@ -64,6 +69,7 @@ async function applyAiWarning(
       user: escapeHtml(displayName(ctx.from)),
       count: warningCount,
       max: settings.maxWarnings > 0 ? settings.maxWarnings : '∞',
+      reason: escapeHtml(reason),
     }),
     { parse_mode: 'HTML' },
   );
@@ -93,7 +99,12 @@ async function applyAiWarning(
       originalMessageId: BigInt(ctx.message.message_id),
       metadata: {
         action: FilterActionType.WARN,
-        ai: { category: result.category, confidence: result.confidence, mediaType },
+        ai: {
+          category: result.category,
+          confidence: result.confidence,
+          mediaType,
+          reason: result.reason,
+        },
       },
     },
   });
@@ -278,7 +289,7 @@ export function registerFilterModule(dependencies: Dependencies): void {
         await next();
         return;
       }
-      await applyAiWarning(dependencies, ctx, aiResult, 'text');
+      await applyAiWarning(dependencies, ctx, aiResult, 'text', ctx.message.text);
       return;
     }
     const role = await dependencies.permissions.roleFor(ctx, ctx.group.id, BigInt(ctx.from.id));
@@ -314,12 +325,13 @@ export function registerFilterModule(dependencies: Dependencies): void {
     if (match.action === FilterActionType.WARN) {
       const me = await ctx.api.getMe();
       const moderator = await ensureUser(dependencies.database, me);
+      const warningReason = quotedMessageReason(ctx.message.text);
       await dependencies.database.warning.create({
         data: {
           groupId: ctx.group.id,
           userId: user.id,
           moderatorId: moderator.id,
-          reason: `Automatischer Wortfilter ${match.presetKey ?? match.id}`,
+          reason: warningReason,
           originalMessageId: BigInt(ctx.message.message_id),
         },
       });
@@ -339,6 +351,7 @@ export function registerFilterModule(dependencies: Dependencies): void {
           user: escapeHtml(displayName(ctx.from)),
           count: warningCount,
           max: settings.maxWarnings > 0 ? settings.maxWarnings : '∞',
+          reason: escapeHtml(warningReason),
         }),
         { parse_mode: 'HTML' },
       );
@@ -366,7 +379,10 @@ export function registerFilterModule(dependencies: Dependencies): void {
         groupId: ctx.group.id,
         targetUserId: user.id,
         type: ModerationActionType.FILTER,
-        reason: `Filter ${match.presetKey ?? match.id}`,
+        reason:
+          match.action === FilterActionType.WARN
+            ? quotedMessageReason(ctx.message.text)
+            : `Filter ${match.presetKey ?? match.id}`,
         originalMessageId: BigInt(ctx.message.message_id),
         metadata: { action: match.action },
       },
@@ -375,6 +391,7 @@ export function registerFilterModule(dependencies: Dependencies): void {
       Nutzer: ctx.from.id,
       Filter: match.presetKey ?? match.id,
       Aktion: match.action,
+      Inhalt: quotedMessageReason(ctx.message.text),
     });
   });
 

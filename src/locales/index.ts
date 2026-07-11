@@ -81,7 +81,7 @@ const de = {
     'Ungültiger Filter. Beispiel: /addfilter contains delete spam. Aktionen: delete, warn, mute, log, reply.',
   filter_not_found: 'Dieser Filter wurde nicht gefunden.',
   automatic_filter_warning:
-    '⚠️ <b>{user}</b> wurde automatisch verwarnt ({count}/{max}). Grund: Verstoß gegen den Wortfilter.',
+    '⚠️ <b>{user}</b> wurde automatisch verwarnt ({count}/{max}). Grund: {reason}',
   automatic_filter_muted:
     '🔇 <b>{user}</b> wurde nach Erreichen der Warnungsgrenze für {duration} stummgeschaltet.',
   automatic_warning_banned:

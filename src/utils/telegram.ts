@@ -8,6 +8,13 @@ export function escapeHtml(value: string): string {
     .replaceAll('"', '&quot;');
 }
 
+export function quotedMessageReason(messageText: string, maximumLength = 700): string {
+  const text = messageText.trim();
+  const shortened =
+    text.length > maximumLength ? `${text.slice(0, Math.max(1, maximumLength - 1))}…` : text;
+  return `Nachricht: „${shortened || '(leer)'}“`;
+}
+
 export function commandArguments(ctx: Context): string[] {
   const remainder = rawCommandRemainder(ctx);
   if (!remainder) return [];
