@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { GoogleGenAI, type Interactions } from '@google/genai';
+import { GoogleGenAI, type GenerateContentResponse } from '@google/genai';
 import type { Logger } from 'pino';
 import { z } from 'zod';
 import type { Env } from '../config/env.js';
@@ -110,28 +110,22 @@ export function limitAiChatAnswer(answer: string, maximumLength = 3_200): string
     : text;
 }
 
-export function extractAiChatSources(steps: Interactions.Step[] | undefined): AiChatSource[] {
+export function extractAiChatSources(response: GenerateContentResponse): AiChatSource[] {
   const sources = new Map<string, AiChatSource>();
-  for (const step of steps ?? []) {
-    if (step.type !== 'model_output') continue;
-    for (const content of step.content ?? []) {
-      if (content.type !== 'text') continue;
-      for (const annotation of content.annotations ?? []) {
-        if (annotation.type !== 'url_citation' || !annotation.url) continue;
-        try {
-          const url = new URL(annotation.url);
-          if (url.protocol !== 'https:' && url.protocol !== 'http:') continue;
-          const title = annotation.title?.trim().replaceAll(/\s+/gu, ' ').slice(0, 80);
-          if (!sources.has(url.href)) {
-            sources.set(url.href, {
-              title: title === undefined || title.length === 0 ? url.hostname : title,
-              url: url.href,
-            });
-          }
-        } catch {
-          // Ungültige Quellen-URLs werden nicht an Telegram weitergegeben.
-        }
+  for (const chunk of response.candidates?.[0]?.groundingMetadata?.groundingChunks ?? []) {
+    if (!chunk.web?.uri) continue;
+    try {
+      const url = new URL(chunk.web.uri);
+      if (url.protocol !== 'https:' && url.protocol !== 'http:') continue;
+      const title = chunk.web.title?.trim().replaceAll(/\s+/gu, ' ').slice(0, 80);
+      if (!sources.has(url.href)) {
+        sources.set(url.href, {
+          title: title === undefined || title.length === 0 ? url.hostname : title,
+          url: url.href,
+        });
       }
+    } catch {
+      // Ungültige Quellen-URLs werden nicht an Telegram weitergegeben.
     }
   }
   return [...sources.values()].slice(0, 3);
@@ -212,17 +206,19 @@ export class AiModerationService {
     try {
       const request = {
         model: this.env.AI_MODEL,
-        system_instruction: `${AI_CHAT_SYSTEM_INSTRUCTION}\nDas aktuelle Datum ist ${currentDate} in der Zeitzone ${this.env.DEFAULT_TIMEZONE}. Verwende dieses Datum verbindlich und ersetze damit jede ältere interne Datumsannahme. Behaupte bei zeitkritischen Themen ohne verlässliche Live-Daten nicht, den neuesten Stand zu kennen.`,
-        input: `Aktueller Datumskontext: ${currentDate} (${this.env.DEFAULT_TIMEZONE}).\nBeantworte diese Frage aus der Telegram-Gruppe:\n${JSON.stringify(question)}`,
-        generation_config: { temperature: 0.4, max_output_tokens: 800 },
-        store: false,
+        contents: `Aktueller Datumskontext: ${currentDate} (${this.env.DEFAULT_TIMEZONE}).\nBeantworte diese Frage aus der Telegram-Gruppe:\n${JSON.stringify(question)}`,
+        config: {
+          systemInstruction: `${AI_CHAT_SYSTEM_INSTRUCTION}\nDas aktuelle Datum ist ${currentDate} in der Zeitzone ${this.env.DEFAULT_TIMEZONE}. Verwende dieses Datum verbindlich und ersetze damit jede ältere interne Datumsannahme. Behaupte bei zeitkritischen Themen ohne verlässliche Live-Daten nicht, den neuesten Stand zu kennen.`,
+          temperature: 0.4,
+          maxOutputTokens: 800,
+        },
       } as const;
       let webSearchUnavailable = false;
       let interaction;
       try {
-        interaction = await this.chatClient.interactions.create({
+        interaction = await this.chatClient.models.generateContent({
           ...request,
-          tools: [{ type: 'google_search' }],
+          config: { ...request.config, tools: [{ googleSearch: {} }] },
         });
       } catch (error) {
         webSearchUnavailable = true;
@@ -230,13 +226,13 @@ export class AiModerationService {
           { err: error },
           'Gemini-Websuche nicht verfügbar; /ki versucht eine Antwort ohne Webzugriff',
         );
-        interaction = await this.chatClient.interactions.create(request);
+        interaction = await this.chatClient.models.generateContent(request);
       }
-      const answer = limitAiChatAnswer(interaction.output_text ?? '');
+      const answer = limitAiChatAnswer(interaction.text ?? '');
       if (!answer) throw new Error('Gemini lieferte keine Chat-Antwort');
       return {
         text: answer,
-        sources: extractAiChatSources(interaction.steps),
+        sources: extractAiChatSources(interaction),
         webSearchUnavailable,
       };
     } catch (error) {
