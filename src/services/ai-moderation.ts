@@ -99,6 +99,18 @@ export function limitAiChatAnswer(answer: string, maximumLength = 3_800): string
     : text;
 }
 
+export function currentDateInTimeZone(date: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? '';
+  return `${value('year')}-${value('month')}-${value('day')}`;
+}
+
 export function decideAiModeration(
   result: AiModerationResult,
   logThreshold: number,
@@ -157,12 +169,13 @@ export class AiModerationService {
     if (!this.chatClient) return null;
     const question = questionText.trim().slice(0, 1_500);
     if (question.length < 2) return null;
+    const currentDate = currentDateInTimeZone(new Date(), this.env.DEFAULT_TIMEZONE);
 
     try {
       const interaction = await this.chatClient.interactions.create({
         model: this.env.AI_MODEL,
-        system_instruction: AI_CHAT_SYSTEM_INSTRUCTION,
-        input: `Beantworte diese Frage aus der Telegram-Gruppe:\n${JSON.stringify(question)}`,
+        system_instruction: `${AI_CHAT_SYSTEM_INSTRUCTION}\nDas aktuelle Datum ist ${currentDate} in der Zeitzone ${this.env.DEFAULT_TIMEZONE}. Verwende dieses Datum verbindlich und ersetze damit jede ältere interne Datumsannahme. Behaupte bei zeitkritischen Themen ohne verlässliche Live-Daten nicht, den neuesten Stand zu kennen.`,
+        input: `Aktueller Datumskontext: ${currentDate} (${this.env.DEFAULT_TIMEZONE}).\nBeantworte diese Frage aus der Telegram-Gruppe:\n${JSON.stringify(question)}`,
         generation_config: { temperature: 0.4, max_output_tokens: 800 },
         store: false,
       });
