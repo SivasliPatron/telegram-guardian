@@ -78,6 +78,8 @@ const de = {
   ai_chat_unavailable: 'Die KI-Funktion ist momentan nicht eingerichtet.',
   ai_chat_rate_limited: 'Bitte warte kurz. Pro Person sind fünf KI-Fragen pro Minute erlaubt.',
   ai_chat_failed: 'Die KI konnte gerade nicht antworten. Bitte versuche es später erneut.',
+  ai_chat_web_unavailable:
+    'Die Websuche ist momentan nicht verfügbar. Diese Antwort verwendet keine Live-Webdaten.',
   filter_added: 'Filter wurde hinzugefügt.',
   filter_removed: 'Filter wurde entfernt.',
   preset_filter_status:

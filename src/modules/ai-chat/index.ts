@@ -8,14 +8,18 @@ import type { AiChatAnswer } from '../../services/ai-moderation.js';
 const MAXIMUM_QUESTION_LENGTH = 1_500;
 const MAXIMUM_REQUESTS_PER_MINUTE = 5;
 
-export function formatAiChatReply(answer: AiChatAnswer): string {
+export function formatAiChatReply(answer: AiChatAnswer, webUnavailableMessage?: string): string {
   const sources = answer.sources
     .map(
       (source, index) =>
         `${index + 1}. <a href="${escapeHtml(source.url)}">${escapeHtml(source.title)}</a>`,
     )
     .join('\n');
-  return `🤖 ${escapeHtml(answer.text)}${sources ? `\n\n<b>Webquellen</b>\n${sources}` : ''}`;
+  const warning =
+    answer.webSearchUnavailable && webUnavailableMessage
+      ? `\n\n⚠️ ${escapeHtml(webUnavailableMessage)}`
+      : '';
+  return `🤖 ${escapeHtml(answer.text)}${sources ? `\n\n<b>Webquellen</b>\n${sources}` : ''}${warning}`;
 }
 
 export function registerAiChatModule(dependencies: Dependencies): void {
@@ -46,7 +50,9 @@ export function registerAiChatModule(dependencies: Dependencies): void {
     await ctx.api.sendChatAction(ctx.group.telegramId.toString(), 'typing');
     const answer = await dependencies.aiModeration.answerQuestion(question);
     await ctx.reply(
-      answer ? formatAiChatReply(answer) : translate(ctx.locale, 'ai_chat_failed'),
+      answer
+        ? formatAiChatReply(answer, translate(ctx.locale, 'ai_chat_web_unavailable'))
+        : translate(ctx.locale, 'ai_chat_failed'),
       answer
         ? {
             parse_mode: 'HTML',

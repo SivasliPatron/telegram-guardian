@@ -100,6 +100,7 @@ export interface AiChatSource {
 export interface AiChatAnswer {
   text: string;
   sources: AiChatSource[];
+  webSearchUnavailable: boolean;
 }
 
 export function limitAiChatAnswer(answer: string, maximumLength = 3_200): string {
@@ -209,17 +210,35 @@ export class AiModerationService {
     const currentDate = currentDateInTimeZone(new Date(), this.env.DEFAULT_TIMEZONE);
 
     try {
-      const interaction = await this.chatClient.interactions.create({
+      const request = {
         model: this.env.AI_MODEL,
         system_instruction: `${AI_CHAT_SYSTEM_INSTRUCTION}\nDas aktuelle Datum ist ${currentDate} in der Zeitzone ${this.env.DEFAULT_TIMEZONE}. Verwende dieses Datum verbindlich und ersetze damit jede ältere interne Datumsannahme. Behaupte bei zeitkritischen Themen ohne verlässliche Live-Daten nicht, den neuesten Stand zu kennen.`,
         input: `Aktueller Datumskontext: ${currentDate} (${this.env.DEFAULT_TIMEZONE}).\nBeantworte diese Frage aus der Telegram-Gruppe:\n${JSON.stringify(question)}`,
-        tools: [{ type: 'google_search' }],
         generation_config: { temperature: 0.4, max_output_tokens: 800 },
         store: false,
-      });
+      } as const;
+      let webSearchUnavailable = false;
+      let interaction;
+      try {
+        interaction = await this.chatClient.interactions.create({
+          ...request,
+          tools: [{ type: 'google_search' }],
+        });
+      } catch (error) {
+        webSearchUnavailable = true;
+        this.logger.warn(
+          { err: error },
+          'Gemini-Websuche nicht verfügbar; /ki versucht eine Antwort ohne Webzugriff',
+        );
+        interaction = await this.chatClient.interactions.create(request);
+      }
       const answer = limitAiChatAnswer(interaction.output_text ?? '');
       if (!answer) throw new Error('Gemini lieferte keine Chat-Antwort');
-      return { text: answer, sources: extractAiChatSources(interaction.steps) };
+      return {
+        text: answer,
+        sources: extractAiChatSources(interaction.steps),
+        webSearchUnavailable,
+      };
     } catch (error) {
       this.logger.warn({ err: error }, 'Gemini konnte die /ki-Frage nicht beantworten');
       return null;
