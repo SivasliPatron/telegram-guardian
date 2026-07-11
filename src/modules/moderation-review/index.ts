@@ -88,18 +88,24 @@ export async function requestModerationReview(
 
   const target = await ensureUser(dependencies.database, ctx.from);
   const storedText = messageText.trim().slice(0, REVIEW_STORED_TEXT_LIMIT);
-  const review = await dependencies.database.moderationReview.create({
-    data: {
-      groupId: ctx.group.id,
-      targetUserId: target.id,
-      originalMessageId,
-      messageText: storedText,
-      aiCategory: result.category,
-      aiConfidence: result.confidence,
-      aiReason: result.reason,
-      expiresAt: new Date(Date.now() + REVIEW_LIFETIME_MS),
-    },
-  });
+  let review;
+  try {
+    review = await dependencies.database.moderationReview.create({
+      data: {
+        groupId: ctx.group.id,
+        targetUserId: target.id,
+        originalMessageId,
+        messageText: storedText,
+        aiCategory: result.category,
+        aiConfidence: result.confidence,
+        aiReason: result.reason,
+        expiresAt: new Date(Date.now() + REVIEW_LIFETIME_MS),
+      },
+    });
+  } catch (error) {
+    if (isUniqueConstraintError(error)) return;
+    throw error;
+  }
 
   let sentMessageId: number | undefined;
   try {
@@ -141,6 +147,15 @@ export async function requestModerationReview(
     });
     throw error;
   }
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'P2002'
+  );
 }
 
 export function registerModerationReviewModule(dependencies: Dependencies): void {

@@ -37,22 +37,17 @@ function filterListLabel(value: string, maximumLength = 96): string {
     : value;
 }
 
-async function applyAiWarning(
+async function applyAiAudioWarning(
   dependencies: Dependencies,
   ctx: BotContext,
   result: AiModerationResult,
-  mediaType: 'text' | 'audio',
-  messageText?: string,
 ): Promise<void> {
   if (!ctx.group || !ctx.from || !ctx.message) return;
   const user = await findOrCreateUserByTelegramId(dependencies.database, BigInt(ctx.from.id));
   await ctx.deleteMessage();
   const me = await ctx.api.getMe();
   const moderator = await ensureUser(dependencies.database, me);
-  const reason =
-    mediaType === 'text' && messageText
-      ? quotedMessageReason(messageText)
-      : `Sprachnachricht: ${result.reason}`;
+  const reason = `Sprachnachricht: ${result.reason}`;
   await dependencies.database.warning.create({
     data: {
       groupId: ctx.group.id,
@@ -98,7 +93,7 @@ async function applyAiWarning(
       { parse_mode: 'HTML' },
     );
   }
-  const filterName = `gemini-${mediaType}-${result.category}`;
+  const filterName = `gemini-audio-${result.category}`;
   await dependencies.database.moderationAction.create({
     data: {
       groupId: ctx.group.id,
@@ -111,7 +106,7 @@ async function applyAiWarning(
         ai: {
           category: result.category,
           confidence: result.confidence,
-          mediaType,
+          mediaType: 'audio',
           reason: result.reason,
         },
       },
@@ -251,6 +246,7 @@ export function registerFilterModule(dependencies: Dependencies): void {
       ? (JSON.parse(cached) as {
           id: string;
           presetKey?: string | null;
+          learnedKey?: string | null;
           pattern: string;
           matchType: FilterMatchType;
           action: FilterActionType;
@@ -263,6 +259,7 @@ export function registerFilterModule(dependencies: Dependencies): void {
           select: {
             id: true,
             presetKey: true,
+            learnedKey: true,
             pattern: true,
             matchType: true,
             action: true,
@@ -272,7 +269,12 @@ export function registerFilterModule(dependencies: Dependencies): void {
           },
         });
     if (!cached) await dependencies.redis.set(filterCacheKey, JSON.stringify(filters), 'EX', 60);
-    const match = filters.find((filter) => configuredFilterMatches(ctx.message.text, filter));
+    const match =
+      filters.find(
+        (filter) =>
+          isLearnedReviewFilterKey(filter.learnedKey) &&
+          configuredFilterMatches(ctx.message.text, filter),
+      ) ?? filters.find((filter) => configuredFilterMatches(ctx.message.text, filter));
     if (!match) {
       const role = await dependencies.permissions.roleFor(ctx, ctx.group.id, BigInt(ctx.from.id));
       if (hasMinimumRole(role, InternalRole.TRUSTED)) {
@@ -289,12 +291,7 @@ export function registerFilterModule(dependencies: Dependencies): void {
         await next();
         return;
       }
-      if (decision === 'log') {
-        await requestModerationReview(dependencies, ctx, aiResult, ctx.message.text);
-        await next();
-        return;
-      }
-      await applyAiWarning(dependencies, ctx, aiResult, 'text', ctx.message.text);
+      await requestModerationReview(dependencies, ctx, aiResult, ctx.message.text);
       return;
     }
     const role = await dependencies.permissions.roleFor(ctx, ctx.group.id, BigInt(ctx.from.id));
@@ -486,7 +483,7 @@ export function registerFilterModule(dependencies: Dependencies): void {
         await next();
         return;
       }
-      await applyAiWarning(dependencies, ctx, aiResult, 'audio');
+      await applyAiAudioWarning(dependencies, ctx, aiResult);
     } catch (error) {
       const safeError =
         error instanceof Error

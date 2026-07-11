@@ -57,11 +57,12 @@ export async function enforceApprovedModerationReview(
         Number(review.originalMessageId),
       );
     } catch (error) {
-      dependencies.logger.warn(
-        { err: error, groupId: review.groupId, reviewId },
-        'Die geprüfte Originalnachricht konnte nicht gelöscht werden',
-      );
-      if (!messageWasAlreadyDeleted(error)) throw error;
+      if (!messageWasAlreadyDeleted(error)) {
+        dependencies.logger.warn(
+          { err: error, groupId: review.groupId, reviewId },
+          'Die geprüfte Originalnachricht konnte nicht gelöscht werden; die bestätigte Verwarnung wird trotzdem abgeschlossen',
+        );
+      }
     }
 
     let banned = false;

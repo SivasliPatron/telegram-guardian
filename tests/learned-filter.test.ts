@@ -5,7 +5,7 @@ import { configuredFilterMatches } from '../src/utils/filter.js';
 describe('aus Admin-Entscheidungen gelernte Wortfilter', () => {
   it('verwendet für denselben Satz unabhängig von Großschreibung denselben eindeutigen Schlüssel', () => {
     const first = learnedReviewFilterKey('  H S Menschen in Afrika haben kein Wasser  ');
-    const second = learnedReviewFilterKey('h s menschen in afrika haben kein wasser');
+    const second = learnedReviewFilterKey('h \u200B s   menschen\nin Afrika haben kein Wasser');
     expect(first).toBe(second);
     expect(first).toMatch(/^learned-review:[a-f0-9]{64}$/u);
     expect(learnedReviewFilterKey('Ein anderer Satz')).not.toBe(first);
@@ -20,6 +20,9 @@ describe('aus Admin-Entscheidungen gelernte Wortfilter', () => {
       ignoreCase: true,
     };
     expect(configuredFilterMatches('H S MENSCHEN IN AFRIKA HABEN KEIN WASSER', filter)).toBe(true);
+    expect(
+      configuredFilterMatches('  H \u200B S  MENSCHEN\nIN AFRIKA HABEN KEIN WASSER  ', filter),
+    ).toBe(true);
     expect(configuredFilterMatches('Heute: h s Menschen in Afrika haben kein Wasser', filter)).toBe(
       false,
     );

@@ -369,6 +369,36 @@ describe('Admin-Prüfablauf für kritische KI-Grenzfälle', () => {
     expect(prompt).not.toContain('x'.repeat(900));
   });
 
+  it('behandelt eine parallele doppelte Review-Erstellung lautlos als bereits vorhanden', async () => {
+    const harness = createHarness();
+    harness.reviewCreate.mockRejectedValueOnce({ code: 'P2002' });
+    const reply = vi.fn().mockResolvedValue({ message_id: 501 });
+    const context = {
+      group: { id: 'group-db-id', telegramId: -100123n, title: 'Testgruppe' },
+      from: { id: 99, is_bot: false, first_name: 'Zielnutzer', username: 'ziel' },
+      message: { message_id: 42, text: 'Doppelter Prüffall' },
+      api: { getChatAdministrators: harness.getChatAdministrators },
+      reply,
+    } as unknown as BotContext;
+
+    await expect(
+      requestModerationReview(
+        harness.dependencies,
+        context,
+        {
+          violation: true,
+          reviewRecommended: false,
+          category: 'insult',
+          confidence: 0.95,
+          reason: 'Möglicher Verstoß',
+        },
+        'Doppelter Prüffall',
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(reply).not.toHaveBeenCalled();
+  });
+
   it('lässt Nicht-Admins keine Entscheidung treffen', async () => {
     const harness = createHarness(InternalRole.MEMBER);
     const callback = harness.callbackContext('approve');
@@ -401,6 +431,7 @@ describe('Admin-Prüfablauf für kritische KI-Grenzfälle', () => {
     expect(harness.warningCreate).not.toHaveBeenCalled();
     expect(harness.actionCreate).not.toHaveBeenCalled();
     expect(harness.filterUpsert).not.toHaveBeenCalled();
+    expect(harness.redisDel).not.toHaveBeenCalled();
     expect(harness.deleteMessage).not.toHaveBeenCalled();
   });
 
@@ -469,6 +500,21 @@ describe('Admin-Prüfablauf für kritische KI-Grenzfälle', () => {
     expect(callback.editMessageText.mock.calls[0]?.[0]).not.toContain('h s Menschen');
     expect(callback.editMessageText.mock.calls[0]?.[0]).toContain('künftig automatisch gefiltert');
     expect(harness.redisDel).toHaveBeenCalledWith('filters:group-db-id');
+  });
+
+  it('schließt eine bestätigte Verwarnung auch bei einem Telegram-Löschfehler ab', async () => {
+    const harness = createHarness();
+    harness.deleteMessage.mockRejectedValueOnce(
+      new Error('Telegram 400: message cannot be deleted'),
+    );
+
+    await harness.handler()(harness.callbackContext('approve').context);
+
+    expect(harness.getReview()?.status).toBe(ModerationReviewStatus.APPROVED);
+    expect(harness.getReview()?.enforcedAt).toBeInstanceOf(Date);
+    expect(harness.warningCreate).toHaveBeenCalledOnce();
+    expect(harness.filterUpsert).toHaveBeenCalledOnce();
+    expect(harness.actionCreate).toHaveBeenCalledOnce();
   });
 
   it('verwendet einen bereits vorhandenen identischen EXACT/WARN-Filter wieder', async () => {
