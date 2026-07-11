@@ -1,10 +1,22 @@
 import type { Dependencies } from '../../types/dependencies.js';
 import { translate } from '../../locales/index.js';
 import { commandRemainder } from '../../utils/telegram.js';
+import { escapeHtml } from '../../utils/telegram.js';
 import { UserFacingError } from '../../utils/errors.js';
+import type { AiChatAnswer } from '../../services/ai-moderation.js';
 
 const MAXIMUM_QUESTION_LENGTH = 1_500;
 const MAXIMUM_REQUESTS_PER_MINUTE = 5;
+
+export function formatAiChatReply(answer: AiChatAnswer): string {
+  const sources = answer.sources
+    .map(
+      (source, index) =>
+        `${index + 1}. <a href="${escapeHtml(source.url)}">${escapeHtml(source.title)}</a>`,
+    )
+    .join('\n');
+  return `🤖 ${escapeHtml(answer.text)}${sources ? `\n\n<b>Webquellen</b>\n${sources}` : ''}`;
+}
 
 export function registerAiChatModule(dependencies: Dependencies): void {
   dependencies.bot.command('ki', async (ctx) => {
@@ -34,9 +46,10 @@ export function registerAiChatModule(dependencies: Dependencies): void {
     await ctx.api.sendChatAction(ctx.group.telegramId.toString(), 'typing');
     const answer = await dependencies.aiModeration.answerQuestion(question);
     await ctx.reply(
-      answer ? `🤖 ${answer}` : translate(ctx.locale, 'ai_chat_failed'),
+      answer ? formatAiChatReply(answer) : translate(ctx.locale, 'ai_chat_failed'),
       answer
         ? {
+            parse_mode: 'HTML',
             reply_parameters: { message_id: ctx.message?.message_id ?? 0 },
             link_preview_options: { is_disabled: true },
           }
