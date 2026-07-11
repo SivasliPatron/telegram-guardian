@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AI_MODERATION_SYSTEM_INSTRUCTION,
   applyMessagePolicyOverrides,
   decideAiModeration,
   decideDisplayNameModeration,
@@ -8,6 +9,13 @@ import {
 } from '../src/services/ai-moderation.js';
 
 describe('KI-Moderation', () => {
+  it('bewertet Mutter- und Mehrdeutigkeitskontext als ganzen Satz', () => {
+    expect(AI_MODERATION_SYSTEM_INSTRUCTION).toContain('vollständige wörtliche Gesamtbedeutung');
+    expect(AI_MODERATION_SYSTEM_INSTRUCTION).toContain('kein Geld für Eier');
+    expect(AI_MODERATION_SYSTEM_INSTRUCTION).toContain('Fick deine Mutter');
+    expect(AI_MODERATION_SYSTEM_INSTRUCTION).toContain('plausiblen harmlosen Lesart');
+  });
+
   it('lässt neutrale oder unsichere Bewertungen durch', () => {
     expect(
       decideAiModeration(
