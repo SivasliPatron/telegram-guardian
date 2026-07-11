@@ -28,6 +28,7 @@ import {
   shouldApplyWarningBan,
 } from '../../services/warning-escalation.js';
 import { appendAdministratorMentions } from '../../services/admin-mentions.js';
+import { requestModerationReview } from '../moderation-review/index.js';
 
 async function applyAiWarning(
   dependencies: Dependencies,
@@ -266,7 +267,7 @@ export function registerFilterModule(dependencies: Dependencies): void {
     );
     if (!match) {
       const role = await dependencies.permissions.roleFor(ctx, ctx.group.id, BigInt(ctx.from.id));
-      if (hasMinimumRole(role, InternalRole.TRUSTED) || !dependencies.aiModeration.enabled) {
+      if (hasMinimumRole(role, InternalRole.TRUSTED)) {
         await next();
         return;
       }
@@ -281,12 +282,7 @@ export function registerFilterModule(dependencies: Dependencies): void {
         return;
       }
       if (decision === 'log') {
-        await dependencies.adminLog.send(ctx.group.id, 'KI-Filter – Prüfung empfohlen', {
-          Nutzer: ctx.from.id,
-          Kategorie: aiResult.category,
-          Sicherheit: `${Math.round(aiResult.confidence * 100)} %`,
-          Grund: aiResult.reason,
-        });
+        await requestModerationReview(dependencies, ctx, aiResult, ctx.message.text);
         await next();
         return;
       }

@@ -12,6 +12,7 @@ Ein modularer Moderationsbot für große Telegram-Supergruppen. Die Anwendung l�
 - Link-, Einladungs-, Kurzlink-, Username-, Weiterleitungs-, Telefon- und E-Mail-Schutz mit gecachten Domain-Ausnahmen
 - Sichere Wortfilter mit `exact`, `contains` und geprüften regulären Ausdrücken sowie Aktionen `delete`, `warn`, `mute`, `log`, `reply`
 - Verwaltete Standardfilter für deutsche, türkische und kurmancî Beleidigungen sowie vulgäre Angriffe auf islamische Heiligtümer; Leetspeak, unsichtbare Zeichen, Buchstabenwiederholungen und einfache Trennzeichen werden normalisiert, während neutrale Religionsbegriffe erlaubt bleiben
+- KI-Grenzfälle mit markierter Admin-Prüfung und einmalig entscheidbaren Buttons für „Verwarnung: Ja/Nein“; klare Verstöße bleiben automatisch moderiert
 - Konfigurierbarer Namensschutz für Beitrittsanfragen, neue Mitglieder und spätere Profiländerungen
 - Persistenter Nachtmodus und automatische Nachrichten mit IANA-Zeitzonen
 - Admin-Log, interne Moderatoren und vertrauenswürdige Mitglieder
@@ -188,7 +189,7 @@ Der Minuten-Job gleicht den gewünschten Nachtstatus mit dem gespeicherten Statu
 ## Datenschutz und Sicherheit
 
 - Telegram-IDs werden in PostgreSQL als `BigInt` gespeichert.
-- Dauerhafte Nachrichteninhalte werden nicht gespeichert; Moderationsaktionen halten nur Grund und optionale Message-ID fest.
+- Potenziell kritische Nachrichten werden für eine offene Admin-Prüfung höchstens 24 Stunden gespeichert und danach verworfen. Bei einer bestätigten Verwarnung bleibt der gekürzte Originaltext als nachvollziehbarer Moderationsgrund erhalten.
 - `/deletemydata` anonymisiert entbehrliche Profildaten. Warnungen und Moderationshistorie bleiben aus Sicherheits- und Nachweispflichten minimal zugeordnet; der Bot erklärt dies transparent.
 - Adminbefehle werden serverseitig geprüft. Benutzertexte werden für HTML-Ausgaben escaped.
 - Reguläre Ausdrücke sind auf 200 Zeichen begrenzt, werden kompiliert und mit `safe-regex2` auf riskante Laufzeitmuster geprüft.

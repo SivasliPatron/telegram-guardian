@@ -48,6 +48,13 @@ enum FilterActionType {
   REPLY
 }
 
+enum ModerationReviewStatus {
+  PENDING
+  APPROVED
+  DISMISSED
+  EXPIRED
+}
+
 model TelegramGroup {
   id                String                 @id @default(cuid())
   telegramId        BigInt                 @unique
@@ -66,6 +73,7 @@ model TelegramGroup {
   logConfiguration  AdminLogConfiguration?
   customCommands    CustomCommand[]
   forbiddenNames    ForbiddenName[]
+  moderationReviews ModerationReview[]
 
   @@index([isActive])
 }
@@ -125,6 +133,8 @@ model User {
   issuedActions    ModerationAction[] @relation("ActionModerator")
   trustedIn        TrustedUser[]      @relation("TrustedTarget")
   trustedBy        TrustedUser[]      @relation("TrustedGrantor")
+  receivedReviews  ModerationReview[] @relation("ReviewTarget")
+  decidedReviews   ModerationReview[] @relation("ReviewModerator")
 }
 
 model GroupMember {
@@ -159,9 +169,40 @@ model Warning {
   createdAt         DateTime      @default(now())
   clearedAt         DateTime?
   deletedAt         DateTime?
+  review            ModerationReview? @relation("ReviewWarning")
 
   @@index([groupId, userId, clearedAt])
   @@index([moderatorId])
+}
+
+model ModerationReview {
+  id                String                 @id @default(cuid())
+  groupId           String
+  targetUserId      String
+  reviewedById      String?
+  warningId         String?                @unique
+  group             TelegramGroup          @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  targetUser        User                   @relation("ReviewTarget", fields: [targetUserId], references: [id], onDelete: Restrict)
+  reviewedBy        User?                  @relation("ReviewModerator", fields: [reviewedById], references: [id], onDelete: Restrict)
+  warning           Warning?               @relation("ReviewWarning", fields: [warningId], references: [id], onDelete: SetNull)
+  originalMessageId BigInt
+  reviewMessageId   BigInt?
+  messageText       String
+  aiCategory        String
+  aiConfidence      Float
+  aiReason          String
+  status            ModerationReviewStatus @default(PENDING)
+  expiresAt         DateTime
+  reviewedAt        DateTime?
+  enforcedAt        DateTime?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  @@unique([groupId, originalMessageId])
+  @@index([groupId, status, expiresAt])
+  @@index([status, expiresAt])
+  @@index([targetUserId, createdAt])
+  @@index([reviewedById])
 }
 
 model ModerationAction {

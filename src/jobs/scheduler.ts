@@ -6,6 +6,9 @@ import type { RedisClient } from '../services/redis.js';
 import type { BotContext } from '../types/context.js';
 import { localClock, shouldNightModeBeClosed } from '../utils/time.js';
 import { memberPermissions, mutedPermissions } from '../modules/moderation/permissions.js';
+import { ModerationReviewStatus } from '../generated/prisma/enums.js';
+import type { AdminLogService } from '../services/admin-log.js';
+import { enforceApprovedModerationReview } from '../services/moderation-review-enforcement.js';
 
 type TaskData = { type: 'delete-message'; chatId: string; messageId: number } | { type: 'tick' };
 
@@ -19,6 +22,7 @@ export class JobScheduler {
     private readonly bot: Bot<BotContext>,
     private readonly logger: Logger,
     redisUrl: string,
+    private readonly adminLog: AdminLogService,
   ) {
     const connection = redisConnectionOptions(redisUrl);
     this.queue = new Queue<TaskData, void, string, TaskData, void, string>('telegram-tasks', {
@@ -81,7 +85,146 @@ export class JobScheduler {
       await this.bot.api.deleteMessage(job.data.chatId, job.data.messageId).catch(() => undefined);
       return;
     }
-    await Promise.all([this.reconcileNightModes(), this.sendScheduledMessages()]);
+    await Promise.all([
+      this.reconcileNightModes(),
+      this.sendScheduledMessages(),
+      this.expireModerationReviews(),
+      this.reconcileApprovedModerationReviews(),
+      this.redactResolvedModerationReviews(),
+    ]);
+  }
+
+  private async expireModerationReviews(): Promise<void> {
+    await this.database.moderationReview.updateMany({
+      where: {
+        status: ModerationReviewStatus.PENDING,
+        expiresAt: { lte: new Date() },
+        reviewMessageId: null,
+      },
+      data: { status: ModerationReviewStatus.EXPIRED, messageText: '' },
+    });
+    const reviews = await this.database.moderationReview.findMany({
+      where: {
+        reviewMessageId: { not: null },
+        OR: [
+          { status: ModerationReviewStatus.PENDING, expiresAt: { lte: new Date() } },
+          { status: ModerationReviewStatus.EXPIRED },
+        ],
+      },
+      include: { group: true },
+      take: 100,
+    });
+    for (const review of reviews) {
+      if (review.status === ModerationReviewStatus.PENDING) {
+        const expired = await this.database.moderationReview.updateMany({
+          where: {
+            id: review.id,
+            status: ModerationReviewStatus.PENDING,
+            expiresAt: { lte: new Date() },
+          },
+          data: { status: ModerationReviewStatus.EXPIRED, messageText: '' },
+        });
+        if (expired.count !== 1) continue;
+      }
+      if (!review.reviewMessageId) continue;
+      await this.bot.api
+        .editMessageText(
+          review.group.telegramId.toString(),
+          Number(review.reviewMessageId),
+          [
+            '🔎 Admin-Prüfung abgeschlossen',
+            '',
+            '⌛ Prüfung abgelaufen.',
+            '',
+            'Der geprüfte Nachrichtentext wurde aus diesem Bot-Hinweis entfernt.',
+          ].join('\n'),
+          { reply_markup: { inline_keyboard: [] } },
+        )
+        .then(async () => {
+          await this.database.moderationReview.updateMany({
+            where: { id: review.id, status: ModerationReviewStatus.EXPIRED },
+            data: { reviewMessageId: null },
+          });
+        })
+        .catch((error: unknown) => {
+          this.logger.warn(
+            { err: error, groupId: review.groupId, reviewId: review.id },
+            'Abgelaufene Admin-Prüfung konnte in Telegram nicht redigiert werden',
+          );
+        });
+    }
+  }
+
+  private async reconcileApprovedModerationReviews(): Promise<void> {
+    const reviews = await this.database.moderationReview.findMany({
+      where: { status: ModerationReviewStatus.APPROVED, enforcedAt: null },
+      select: { id: true },
+      take: 50,
+    });
+    for (const review of reviews) {
+      await enforceApprovedModerationReview(
+        {
+          adminLog: this.adminLog,
+          bot: this.bot,
+          database: this.database,
+          logger: this.logger,
+          redis: this.redis,
+        },
+        review.id,
+      ).catch((error: unknown) => {
+        this.logger.error(
+          { err: error, reviewId: review.id },
+          'Bestätigte Admin-Prüfung konnte noch nicht vollständig durchgesetzt werden',
+        );
+      });
+    }
+  }
+
+  private async redactResolvedModerationReviews(): Promise<void> {
+    const reviews = await this.database.moderationReview.findMany({
+      where: {
+        status: {
+          in: [ModerationReviewStatus.APPROVED, ModerationReviewStatus.DISMISSED],
+        },
+        reviewMessageId: { not: null },
+      },
+      include: { group: true },
+      take: 100,
+    });
+    for (const review of reviews) {
+      if (!review.reviewMessageId) continue;
+      const decisionText =
+        review.status === ModerationReviewStatus.APPROVED
+          ? '⚠️ Verwarnung erteilt.'
+          : '✅ Keine Verwarnung.';
+      try {
+        await this.bot.api.editMessageText(
+          review.group.telegramId.toString(),
+          Number(review.reviewMessageId),
+          [
+            '🔎 Admin-Prüfung abgeschlossen',
+            '',
+            decisionText,
+            '',
+            'Der geprüfte Nachrichtentext wurde aus diesem Bot-Hinweis entfernt.',
+          ].join('\n'),
+          { reply_markup: { inline_keyboard: [] } },
+        );
+        await this.database.moderationReview.updateMany({
+          where: {
+            id: review.id,
+            status: review.status,
+            reviewMessageId: review.reviewMessageId,
+          },
+          data: { reviewMessageId: null },
+        });
+      } catch (error) {
+        this.logger.warn(
+          { err: error, groupId: review.groupId, reviewId: review.id },
+          'Entschiedene Admin-Prüfung konnte in Telegram nicht redigiert werden',
+        );
+      }
+    }
   }
 
   private async reconcileNightModes(): Promise<void> {
