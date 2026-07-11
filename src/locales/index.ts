@@ -77,9 +77,8 @@ const de = {
   ai_chat_too_long: 'Die Frage ist zu lang. Bitte verwende höchstens 1.500 Zeichen.',
   ai_chat_unavailable: 'Die KI-Funktion ist momentan nicht eingerichtet.',
   ai_chat_rate_limited: 'Bitte warte kurz. Pro Person sind fünf KI-Fragen pro Minute erlaubt.',
-  ai_chat_failed: 'Die KI konnte gerade nicht antworten. Bitte versuche es später erneut.',
-  ai_chat_web_unavailable:
-    'Die Websuche ist momentan nicht verfügbar. Diese Antwort verwendet keine Live-Webdaten.',
+  ai_chat_failed:
+    'Die Google-Live-Suche ist momentan nicht verfügbar. Prüfe das Gemini-Suchkontingent oder versuche es später erneut.',
   filter_added: 'Filter wurde hinzugefügt.',
   filter_removed: 'Filter wurde entfernt.',
   preset_filter_status:

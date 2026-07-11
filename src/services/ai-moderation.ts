@@ -100,7 +100,6 @@ export interface AiChatSource {
 export interface AiChatAnswer {
   text: string;
   sources: AiChatSource[];
-  webSearchUnavailable: boolean;
 }
 
 export function limitAiChatAnswer(answer: string, maximumLength = 3_200): string {
@@ -213,27 +212,15 @@ export class AiModerationService {
           maxOutputTokens: 800,
         },
       } as const;
-      let webSearchUnavailable = false;
-      let interaction;
-      try {
-        interaction = await this.chatClient.models.generateContent({
-          ...request,
-          config: { ...request.config, tools: [{ googleSearch: {} }] },
-        });
-      } catch (error) {
-        webSearchUnavailable = true;
-        this.logger.warn(
-          { err: error },
-          'Gemini-Websuche nicht verfügbar; /ki versucht eine Antwort ohne Webzugriff',
-        );
-        interaction = await this.chatClient.models.generateContent(request);
-      }
+      const interaction = await this.chatClient.models.generateContent({
+        ...request,
+        config: { ...request.config, tools: [{ googleSearch: {} }] },
+      });
       const answer = limitAiChatAnswer(interaction.text ?? '');
       if (!answer) throw new Error('Gemini lieferte keine Chat-Antwort');
       return {
         text: answer,
         sources: extractAiChatSources(interaction),
-        webSearchUnavailable,
       };
     } catch (error) {
       this.logger.warn({ err: error }, 'Gemini konnte die /ki-Frage nicht beantworten');
