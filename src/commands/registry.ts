@@ -21,6 +21,12 @@ export const commandRegistry: readonly CommandDefinition[] = [
     category: 'Mitglieder',
   },
   {
+    command: 'ki',
+    description: 'Der KI eine Frage stellen',
+    role: InternalRole.MEMBER,
+    category: 'Mitglieder',
+  },
+  {
     command: 'regeln',
     description: 'Gruppenregeln anzeigen',
     role: InternalRole.MEMBER,

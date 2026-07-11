@@ -11,6 +11,7 @@ import { registerAdminLogModule } from '../modules/admin-log/index.js';
 import { registerInformationModule } from '../modules/information/index.js';
 import { registerCustomCommandsModule } from '../modules/custom-commands/index.js';
 import { registerNameGuardModule } from '../modules/name-guard/index.js';
+import { registerAiChatModule } from '../modules/ai-chat/index.js';
 
 export function registerModules(dependencies: Dependencies): void {
   registerNameGuardModule(dependencies);
@@ -24,5 +25,6 @@ export function registerModules(dependencies: Dependencies): void {
   registerScheduledMessagesModule(dependencies);
   registerAdminLogModule(dependencies);
   registerInformationModule(dependencies);
+  registerAiChatModule(dependencies);
   registerCustomCommandsModule(dependencies);
 }

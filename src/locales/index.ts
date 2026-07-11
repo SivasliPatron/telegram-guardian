@@ -73,6 +73,11 @@ const de = {
   userinfo:
     '<b>{name}</b>\nTelegram-ID: <code>{id}</code>\nRolle: {role}\nBeitritt: {joined}\nWarnungen: {warnings}\nMute bis: {muted}\nModerationsaktionen: {actions}\n\n<b>Letzte Aktionen</b>\n{history}',
   help_title: '🤖 <b>Verfügbare Befehle</b>',
+  ai_chat_usage: 'Verwendung: /ki Deine Frage',
+  ai_chat_too_long: 'Die Frage ist zu lang. Bitte verwende höchstens 1.500 Zeichen.',
+  ai_chat_unavailable: 'Die KI-Funktion ist momentan nicht eingerichtet.',
+  ai_chat_rate_limited: 'Bitte warte kurz. Pro Person sind fünf KI-Fragen pro Minute erlaubt.',
+  ai_chat_failed: 'Die KI konnte gerade nicht antworten. Bitte versuche es später erneut.',
   filter_added: 'Filter wurde hinzugefügt.',
   filter_removed: 'Filter wurde entfernt.',
   preset_filter_status:
