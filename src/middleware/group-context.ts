@@ -1,7 +1,7 @@
 import type { MiddlewareFn } from 'grammy';
 import type { Dependencies } from '../types/dependencies.js';
 import type { BotContext, GroupReference } from '../types/context.js';
-import { ensureGroup, ensureMember } from '../database/repositories.js';
+import { ensureGroup } from '../database/repositories.js';
 
 export function groupContextMiddleware(dependencies: Dependencies): MiddlewareFn<BotContext> {
   return async (ctx, next) => {
@@ -34,9 +34,6 @@ export function groupContextMiddleware(dependencies: Dependencies): MiddlewareFn
     ctx.locale = settings.language;
     if (ctx.from?.username) {
       await dependencies.targets.remember(group.id, ctx.from.id, ctx.from.username);
-    }
-    if (ctx.from && ctx.message?.text?.startsWith('/')) {
-      await ensureMember(dependencies.database, group.id, ctx.from);
     }
     await next();
   };

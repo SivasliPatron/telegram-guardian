@@ -25,15 +25,18 @@ export function registerWelcomeModule(dependencies: Dependencies): void {
   dependencies.bot.on('message:new_chat_members', async (ctx) => {
     if (!ctx.group) return;
     const group = ctx.group;
+    const joinedAt = new Date(ctx.message.date * 1_000);
+    await Promise.all(
+      ctx.message.new_chat_members
+        .filter((member) => !member.is_bot)
+        .map((member) => ensureMember(dependencies.database, group.id, member, joinedAt)),
+    );
     const settings = await dependencies.settings.get(group.id);
     if (!settings.welcomeEnabled) return;
     const members = ctx.message.new_chat_members.filter(
       (member) => settings.welcomeBots || !member.is_bot,
     );
     if (members.length === 0) return;
-    await Promise.all(
-      members.map((member) => ensureMember(dependencies.database, group.id, member)),
-    );
     const sent = await ctx.reply(renderWelcome(settings.welcomeText, members, group.title), {
       ...(settings.welcomeRulesButton ? { reply_markup: rulesKeyboard(ctx.locale) } : {}),
     });

@@ -1,6 +1,10 @@
 import { InternalRole } from '../../generated/prisma/enums.js';
 import type { Dependencies } from '../../types/dependencies.js';
-import { findOrCreateUserByTelegramId, ensureUser } from '../../database/repositories.js';
+import {
+  clearedInactivityState,
+  findOrCreateUserByTelegramId,
+  ensureUser,
+} from '../../database/repositories.js';
 import { commandArguments } from '../../utils/telegram.js';
 import { UserFacingError } from '../../utils/errors.js';
 import { translate } from '../../locales/index.js';
@@ -25,11 +29,40 @@ export function registerRolesModule(dependencies: Dependencies): void {
           })
         : null;
     const nextRole = trusted ? InternalRole.TRUSTED : role;
-    await dependencies.database.groupMember.upsert({
-      where: { groupId_userId: { groupId: ctx.group.id, userId: user.id } },
-      create: { groupId: ctx.group.id, userId: user.id, role: nextRole },
-      update: { role: nextRole },
-    });
+    const changedAt = new Date((ctx.message?.date ?? Math.floor(Date.now() / 1_000)) * 1_000);
+    await dependencies.database.$transaction([
+      dependencies.database.groupMember.upsert({
+        where: { groupId_userId: { groupId: ctx.group.id, userId: user.id } },
+        create: {
+          groupId: ctx.group.id,
+          userId: user.id,
+          role: nextRole,
+          lastSeenAt: changedAt,
+          ...clearedInactivityState(),
+        },
+        update: { role: nextRole },
+      }),
+      dependencies.database.groupMember.updateMany({
+        where: {
+          groupId: ctx.group.id,
+          userId: user.id,
+          inactivityRemovalStartedAt: null,
+          inactivityBannedAt: null,
+        },
+        data: { lastSeenAt: changedAt, ...clearedInactivityState() },
+      }),
+      dependencies.database.groupMember.updateMany({
+        where: {
+          groupId: ctx.group.id,
+          userId: user.id,
+          OR: [
+            { inactivityRemovalStartedAt: { not: null } },
+            { inactivityBannedAt: { not: null } },
+          ],
+        },
+        data: { inactivityWarnedAt: null, inactivityKickDueAt: null },
+      }),
+    ]);
     await dependencies.redis.del(`role:${ctx.group.id}:${target.telegramId}`);
     await ctx.reply(translate(ctx.locale, 'setting_saved'));
   };
@@ -43,11 +76,12 @@ export function registerRolesModule(dependencies: Dependencies): void {
       findOrCreateUserByTelegramId(dependencies.database, target.telegramId),
       ensureUser(dependencies.database, ctx.from),
     ]);
+    const changedAt = new Date((ctx.message?.date ?? Math.floor(Date.now() / 1_000)) * 1_000);
+    const member = await dependencies.database.groupMember.findUnique({
+      where: { groupId_userId: { groupId: ctx.group.id, userId: user.id } },
+      select: { role: true },
+    });
     if (trusted) {
-      const member = await dependencies.database.groupMember.findUnique({
-        where: { groupId_userId: { groupId: ctx.group.id, userId: user.id } },
-        select: { role: true },
-      });
       const role =
         member?.role === InternalRole.MODERATOR ||
         member?.role === InternalRole.ADMIN ||
@@ -62,8 +96,34 @@ export function registerRolesModule(dependencies: Dependencies): void {
         }),
         dependencies.database.groupMember.upsert({
           where: { groupId_userId: { groupId: ctx.group.id, userId: user.id } },
-          create: { groupId: ctx.group.id, userId: user.id, role },
+          create: {
+            groupId: ctx.group.id,
+            userId: user.id,
+            role,
+            lastSeenAt: changedAt,
+            ...clearedInactivityState(),
+          },
           update: { role },
+        }),
+        dependencies.database.groupMember.updateMany({
+          where: {
+            groupId: ctx.group.id,
+            userId: user.id,
+            inactivityRemovalStartedAt: null,
+            inactivityBannedAt: null,
+          },
+          data: { lastSeenAt: changedAt, ...clearedInactivityState() },
+        }),
+        dependencies.database.groupMember.updateMany({
+          where: {
+            groupId: ctx.group.id,
+            userId: user.id,
+            OR: [
+              { inactivityRemovalStartedAt: { not: null } },
+              { inactivityBannedAt: { not: null } },
+            ],
+          },
+          data: { inactivityWarnedAt: null, inactivityKickDueAt: null },
         }),
       ]);
     } else {
@@ -72,8 +132,34 @@ export function registerRolesModule(dependencies: Dependencies): void {
           where: { groupId: ctx.group.id, userId: user.id },
         }),
         dependencies.database.groupMember.updateMany({
-          where: { groupId: ctx.group.id, userId: user.id, role: InternalRole.TRUSTED },
-          data: { role: InternalRole.MEMBER },
+          where: {
+            groupId: ctx.group.id,
+            userId: user.id,
+            role: InternalRole.TRUSTED,
+            inactivityRemovalStartedAt: null,
+            inactivityBannedAt: null,
+          },
+          data: {
+            role: InternalRole.MEMBER,
+            lastSeenAt: changedAt,
+            ...clearedInactivityState(),
+          },
+        }),
+        dependencies.database.groupMember.updateMany({
+          where: {
+            groupId: ctx.group.id,
+            userId: user.id,
+            role: InternalRole.TRUSTED,
+            OR: [
+              { inactivityRemovalStartedAt: { not: null } },
+              { inactivityBannedAt: { not: null } },
+            ],
+          },
+          data: {
+            role: InternalRole.MEMBER,
+            inactivityWarnedAt: null,
+            inactivityKickDueAt: null,
+          },
         }),
       ]);
     }

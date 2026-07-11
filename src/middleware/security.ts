@@ -4,9 +4,15 @@ import type { RedisClient } from '../services/redis.js';
 
 export function deduplicateUpdates(redis: RedisClient): MiddlewareFn<BotContext> {
   return async (ctx, next) => {
-    const accepted = await redis.set(`update:${ctx.update.update_id}`, '1', 'EX', 86_400, 'NX');
+    const key = `update:${ctx.update.update_id}`;
+    const accepted = await redis.set(key, '1', 'EX', 86_400, 'NX');
     if (accepted !== 'OK') return;
-    await next();
+    try {
+      await next();
+    } catch (error) {
+      await redis.del(key).catch(() => undefined);
+      throw error;
+    }
   };
 }
 

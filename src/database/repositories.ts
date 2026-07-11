@@ -37,13 +37,67 @@ export async function ensureUser(database: Database, user: TelegramUser) {
   });
 }
 
-export async function ensureMember(database: Database, groupId: string, user: TelegramUser) {
+export function clearedInactivityState() {
+  return {
+    inactivityWarnedAt: null,
+    inactivityKickDueAt: null,
+    inactivityRemovalStartedAt: null,
+    inactivityBannedAt: null,
+  } as const;
+}
+
+export async function ensureMember(
+  database: Database,
+  groupId: string,
+  user: TelegramUser,
+  lastSeenAt = new Date(),
+) {
   const storedUser = await ensureUser(database, user);
-  const member = await database.groupMember.upsert({
+  const existing = await database.groupMember.upsert({
     where: { groupId_userId: { groupId, userId: storedUser.id } },
-    create: { groupId, userId: storedUser.id },
-    update: { lastSeenAt: new Date(), deletedAt: null },
+    create: {
+      groupId,
+      userId: storedUser.id,
+      lastSeenAt,
+      ...clearedInactivityState(),
+    },
+    update: {},
   });
+  const updatedWithoutRecovery = await database.groupMember.updateMany({
+    where: {
+      id: existing.id,
+      lastSeenAt: { lte: lastSeenAt },
+      inactivityRemovalStartedAt: null,
+      inactivityBannedAt: null,
+      OR: [{ deletedAt: null }, { deletedAt: { lte: lastSeenAt } }],
+    },
+    data: {
+      lastSeenAt,
+      deletedAt: null,
+      inactivityWarnedAt: null,
+      inactivityKickDueAt: null,
+    },
+  });
+
+  if (updatedWithoutRecovery.count === 0) {
+    await database.groupMember.updateMany({
+      where: {
+        id: existing.id,
+        lastSeenAt: { lte: lastSeenAt },
+        OR: [{ inactivityRemovalStartedAt: { not: null } }, { inactivityBannedAt: { not: null } }],
+      },
+      data: {
+        lastSeenAt,
+        inactivityWarnedAt: null,
+        inactivityKickDueAt: null,
+      },
+    });
+  }
+
+  const member =
+    updatedWithoutRecovery.count === 1
+      ? { ...existing, lastSeenAt, deletedAt: null, ...clearedInactivityState() }
+      : existing;
   return { user: storedUser, member };
 }
 
