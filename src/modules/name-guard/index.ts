@@ -8,6 +8,7 @@ import { ensureUser } from '../../database/repositories.js';
 import { translate } from '../../locales/index.js';
 import { hasMinimumRole } from '../../services/permissions.js';
 import {
+  isProtectedNeutralName,
   NameGuardService,
   visibleProfileName,
   type ForbiddenNameMatch,
@@ -58,6 +59,7 @@ async function evaluateName(
   groupId: string,
   user: TelegramUser,
 ): Promise<NameEvaluation> {
+  if (isProtectedNeutralName(visibleProfileName(user))) return { kind: 'allowed' };
   if (await service.isAllowed(groupId, user)) return { kind: 'allowed' };
 
   const confirmedViolation = await service.findViolation(groupId, user);

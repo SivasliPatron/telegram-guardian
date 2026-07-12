@@ -4,6 +4,7 @@ import {
   NameReviewStatus,
 } from '../generated/prisma/enums.js';
 import { translate } from '../locales/index.js';
+import { isProtectedNeutralName } from './name-guard.js';
 import type { Dependencies } from '../types/dependencies.js';
 
 type NameReviewEnforcementDependencies = Pick<
@@ -35,6 +36,16 @@ export async function enforceResolvedNameReview(
       (review.status !== NameReviewStatus.ALLOWED && review.status !== NameReviewStatus.FORBIDDEN)
     ) {
       return null;
+    }
+    if (
+      review.status === NameReviewStatus.FORBIDDEN &&
+      isProtectedNeutralName(review.displayName)
+    ) {
+      await dependencies.database.nameReview.updateMany({
+        where: { id: review.id, status: NameReviewStatus.FORBIDDEN },
+        data: { status: NameReviewStatus.ALLOWED, enforcedAt: new Date() },
+      });
+      return { handledJoinRequest: false, removedMember: false, targetWasAbsent: false };
     }
     if (review.enforcedAt) {
       return {

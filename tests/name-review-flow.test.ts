@@ -313,4 +313,22 @@ describe('Admin-Prüfung für sichtbare Namen', () => {
     expect(harness.moderationActionCreate).toHaveBeenCalledTimes(2);
     expect(callback.editMessageText.mock.calls[0]?.[0]).toContain('Nicht erlaubt');
   });
+
+  it('lässt einen alten Prüffall für den neutralen Namen Türk nicht sperren', async () => {
+    const harness = callbackHarness(NameReviewContext.MEMBER);
+    harness.review.displayName = 'Türk';
+    harness.review.normalizedName = 'türk';
+    harness.review.candidatePattern = 'Türk';
+    const callback = harness.callbackContext('forbid');
+
+    await harness.handler()(callback.context);
+
+    expect(harness.review.status).toBe(NameReviewStatus.PENDING);
+    expect(harness.forbiddenNameUpsert).not.toHaveBeenCalled();
+    expect(harness.banChatMember).not.toHaveBeenCalled();
+    expect(callback.answerCallbackQuery).toHaveBeenCalledWith({
+      text: 'Dieser neutrale Name darf nicht gesperrt werden.',
+      show_alert: true,
+    });
+  });
 });

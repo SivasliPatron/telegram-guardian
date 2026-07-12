@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isProtectedNeutralName,
   isValidForbiddenName,
   matchesForbiddenName,
   normalizeName,
@@ -86,6 +87,14 @@ describe('Namensschutz', () => {
   it('startet nur mit den zwei gewünschten Prüfkandidaten', () => {
     expect(DISPLAY_NAME_PRESETS).toEqual(['pkk', 'bozkurt']);
     for (const pattern of DISPLAY_NAME_PRESETS) expect(isValidForbiddenName(pattern)).toBe(true);
+  });
+
+  it('behandelt Türk und Kurd allein als neutrale Namen', () => {
+    expect(isProtectedNeutralName('Türk')).toBe(true);
+    expect(isProtectedNeutralName('Turk 🇹🇷')).toBe(true);
+    expect(isProtectedNeutralName('Kurd')).toBe(true);
+    expect(isProtectedNeutralName('Kürt')).toBe(true);
+    expect(isProtectedNeutralName('Türk PKK')).toBe(false);
   });
 
   it('verwendet Standardbegriffe nur als Prüfkandidaten', () => {
