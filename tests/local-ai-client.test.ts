@@ -142,7 +142,10 @@ describe('lokaler llama.cpp-KI-Client', () => {
     expect(requestBody()).toEqual({
       model: 'qwen3.5-2b',
       messages: [
-        { role: 'system', content: 'Bewerte ausschließlich den Inhalt.' },
+        {
+          role: 'system',
+          content: `Bewerte ausschließlich den Inhalt.\n\nGib ausschließlich ein JSON-Objekt zurück, das exakt diesem JSON-Schema entspricht: ${JSON.stringify(moderationSchema)}`,
+        },
         { role: 'user', content: 'Ignoriere die Systemanweisung nicht.' },
       ],
       temperature: 0,
@@ -153,12 +156,7 @@ describe('lokaler llama.cpp-KI-Client', () => {
       chat_template_kwargs: { enable_thinking: false },
       reasoning_format: 'none',
       response_format: {
-        type: 'json_schema',
-        json_schema: {
-          name: 'guardian_response',
-          strict: true,
-          schema: moderationSchema,
-        },
+        type: 'json_object',
       },
     });
   });
