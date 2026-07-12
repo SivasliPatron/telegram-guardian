@@ -288,10 +288,7 @@ export function decideAiModeration(
 export function decideDisplayNameModeration(
   result: DisplayNameModerationResult,
   logThreshold: number,
-  kickThreshold: number,
 ): AiModerationDecision {
-  // Deterministic name rules may still remove users; an AI-only result is review-only.
-  void kickThreshold;
   if (!result.violation || result.category === 'none' || result.confidence < logThreshold) {
     return 'allow';
   }
@@ -444,11 +441,7 @@ export class AiModerationService {
   }
 
   public decideDisplayName(result: DisplayNameModerationResult): AiModerationDecision {
-    return decideDisplayNameModeration(
-      result,
-      this.env.AI_NAME_LOG_THRESHOLD,
-      this.env.AI_NAME_KICK_THRESHOLD,
-    );
+    return decideDisplayNameModeration(result, this.env.AI_NAME_LOG_THRESHOLD);
   }
 
   public async classify(messageText: string): Promise<AiModerationResult | null> {

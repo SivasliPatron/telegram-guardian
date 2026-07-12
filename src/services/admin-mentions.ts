@@ -35,7 +35,7 @@ export async function appendAdministratorMentions(
   } catch (error) {
     dependencies.logger.warn(
       { err: error, groupId: ctx.group.id },
-      'Administratoren konnten für die Verwarnung nicht markiert werden',
+      'Administratoren konnten für den Moderationshinweis nicht markiert werden',
     );
     return warningMessage;
   }

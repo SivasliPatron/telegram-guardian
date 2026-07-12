@@ -6,6 +6,7 @@ import {
   normalizedProfileName,
 } from '../src/services/name-guard.js';
 import { DISPLAY_NAME_PRESETS } from '../src/modules/name-guard/presets.js';
+import { findDisplayNamePresetMatch } from '../src/modules/name-guard/presets.js';
 import { translate } from '../src/locales/index.js';
 
 describe('Namensschutz', () => {
@@ -82,9 +83,33 @@ describe('Namensschutz', () => {
     ).toBe(false);
   });
 
-  it('liefert gültige politische und beleidigende Standardbegriffe', () => {
-    expect(DISPLAY_NAME_PRESETS.length).toBeGreaterThan(50);
+  it('startet nur mit den zwei gewünschten Prüfkandidaten', () => {
+    expect(DISPLAY_NAME_PRESETS).toEqual(['pkk', 'bozkurt']);
     for (const pattern of DISPLAY_NAME_PRESETS) expect(isValidForbiddenName(pattern)).toBe(true);
+  });
+
+  it('verwendet Standardbegriffe nur als Prüfkandidaten', () => {
+    expect(
+      findDisplayNamePresetMatch({
+        id: 1,
+        is_bot: false,
+        first_name: 'Max P.K.K',
+      }),
+    ).toMatchObject({ pattern: 'pkk' });
+    expect(
+      findDisplayNamePresetMatch({
+        id: 2,
+        is_bot: false,
+        first_name: 'Bozkurt Test',
+      }),
+    ).toMatchObject({ pattern: 'bozkurt' });
+    expect(
+      findDisplayNamePresetMatch({
+        id: 3,
+        is_bot: false,
+        first_name: 'Max A.F.D',
+      }),
+    ).toBeNull();
   });
 
   it('erklärt dem entfernten Nutzer den sichtbaren Namen und ignorierten @Namen', () => {

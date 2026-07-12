@@ -1,7 +1,7 @@
 import type { Database } from '../database/client.js';
 import type { RedisClient } from './redis.js';
 import { setPresetFilters } from '../modules/filters/presets.js';
-import { setDisplayNamePresets } from '../modules/name-guard/presets.js';
+import { allowedNameCacheKey, forbiddenNameCacheKey } from './name-guard.js';
 
 export const DEFAULT_GROUP_RULES = `1. Respektvoller Umgang
 Behandle alle Mitglieder höflich. Beleidigungen, persönliche Angriffe, Mobbing und Provokationen sind nicht erlaubt – unabhängig davon, ob sie auf Deutsch, Türkisch oder Kurmancî geschrieben werden.
@@ -41,9 +41,11 @@ export async function applyRecommendedGroupSetup(
     where: { groupId },
     data: { rulesText: DEFAULT_GROUP_RULES, nameProtectionEnabled: true },
   });
-  await Promise.all([
-    setPresetFilters(database, groupId, actorTelegramId, true),
-    setDisplayNamePresets(database, redis, groupId, actorTelegramId),
-  ]);
-  await redis.del(`settings:${groupId}`, `filters:${groupId}`, `forbidden-names:${groupId}`);
+  await setPresetFilters(database, groupId, actorTelegramId, true);
+  await redis.del(
+    `settings:${groupId}`,
+    `filters:${groupId}`,
+    forbiddenNameCacheKey(groupId),
+    allowedNameCacheKey(groupId),
+  );
 }

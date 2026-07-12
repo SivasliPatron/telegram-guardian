@@ -11,11 +11,13 @@ import { registerAdminLogModule } from '../modules/admin-log/index.js';
 import { registerInformationModule } from '../modules/information/index.js';
 import { registerCustomCommandsModule } from '../modules/custom-commands/index.js';
 import { registerNameGuardModule } from '../modules/name-guard/index.js';
+import { registerNameReviewModule } from '../modules/name-review/index.js';
 import { registerAiChatModule } from '../modules/ai-chat/index.js';
 import { registerModerationReviewModule } from '../modules/moderation-review/index.js';
 import { registerInactivityModule } from '../modules/inactivity/index.js';
 
 export function registerModules(dependencies: Dependencies): void {
+  registerNameReviewModule(dependencies);
   registerNameGuardModule(dependencies);
   registerProtectionModule(dependencies);
   registerModerationReviewModule(dependencies);

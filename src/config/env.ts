@@ -105,7 +105,6 @@ export const envSchema = z
     AI_AUDIO_WARN_THRESHOLD: z.coerce.number().min(0).max(1).default(0.65),
     AI_NAME_FILTER_ENABLED: booleanEnvSchema.default(false),
     AI_NAME_LOG_THRESHOLD: z.coerce.number().min(0).max(1).default(0.5),
-    AI_NAME_KICK_THRESHOLD: z.coerce.number().min(0).max(1).default(0.75),
     LOCAL_AI_BASE_URL: optionalPrivateServiceUrlSchema,
     LOCAL_AI_API_KEY: optionalPrivateServiceApiKeySchema,
     LOCAL_AI_MODEL: z
@@ -226,13 +225,6 @@ export const envSchema = z
         code: 'custom',
         path: ['AI_NAME_FILTER_ENABLED'],
         message: 'Der Text-KI-Filter muss als Grundlage ebenfalls aktiviert sein',
-      });
-    }
-    if (env.AI_NAME_LOG_THRESHOLD >= env.AI_NAME_KICK_THRESHOLD) {
-      context.addIssue({
-        code: 'custom',
-        path: ['AI_NAME_KICK_THRESHOLD'],
-        message: 'Die KI-Namensperre muss über der Namens-Logschwelle liegen',
       });
     }
   });

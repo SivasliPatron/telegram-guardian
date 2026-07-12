@@ -148,7 +148,6 @@ describe('KI-Moderation', () => {
           reason: 'Beleidigender sichtbarer Name',
         },
         0.5,
-        0.75,
       ),
     ).toBe('log');
   });

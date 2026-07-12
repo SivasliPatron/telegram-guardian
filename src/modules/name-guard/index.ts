@@ -1,5 +1,9 @@
 import type { User as TelegramUser } from 'grammy/types';
-import { InternalRole, ModerationActionType } from '../../generated/prisma/enums.js';
+import {
+  InternalRole,
+  ModerationActionType,
+  NameReviewContext,
+} from '../../generated/prisma/enums.js';
 import { ensureUser } from '../../database/repositories.js';
 import { translate } from '../../locales/index.js';
 import { hasMinimumRole } from '../../services/permissions.js';
@@ -11,8 +15,9 @@ import {
 import type { BotContext } from '../../types/context.js';
 import type { Dependencies } from '../../types/dependencies.js';
 import { UserFacingError } from '../../utils/errors.js';
-import { setDisplayNamePresets } from './presets.js';
+import { findDisplayNamePresetMatch } from './presets.js';
 import { commandArguments, commandRemainder, escapeHtml } from '../../utils/telegram.js';
+import { requestNameReview, type NameReviewCandidate } from '../name-review/index.js';
 
 async function recordNameViolation(
   dependencies: Dependencies,
@@ -42,17 +47,36 @@ async function isTelegramAdministrator(ctx: BotContext, userId: number): Promise
   return member.status === 'administrator' || member.status === 'creator';
 }
 
-async function findNameViolation(
+type NameEvaluation =
+  | { kind: 'allowed' }
+  | { kind: 'forbidden'; violation: ForbiddenNameMatch }
+  | { kind: 'review'; candidate: NameReviewCandidate };
+
+async function evaluateName(
   dependencies: Dependencies,
   service: NameGuardService,
   groupId: string,
   user: TelegramUser,
-): Promise<ForbiddenNameMatch | null> {
-  const presetViolation = await service.findViolation(groupId, user);
-  if (presetViolation) return presetViolation;
+): Promise<NameEvaluation> {
+  if (await service.isAllowed(groupId, user)) return { kind: 'allowed' };
+
+  const confirmedViolation = await service.findViolation(groupId, user);
+  if (confirmedViolation) return { kind: 'forbidden', violation: confirmedViolation };
+
+  const presetCandidate = findDisplayNamePresetMatch(user);
+  if (presetCandidate) {
+    return {
+      kind: 'review',
+      candidate: {
+        pattern: presetCandidate.pattern,
+        source: 'preset',
+        reason: 'Der sichtbare Name enthält einen möglichen Regelverstoß.',
+      },
+    };
+  }
 
   const result = await dependencies.aiModeration.classifyDisplayName(visibleProfileName(user));
-  if (!result) return null;
+  if (!result) return { kind: 'allowed' };
   const decision = dependencies.aiModeration.decideDisplayName(result);
   dependencies.logger.info(
     {
@@ -64,20 +88,15 @@ async function findNameViolation(
     },
     'KI-Namensprüfung abgeschlossen',
   );
-  if (decision === 'log') {
-    await dependencies.adminLog.send(groupId, 'KI-Namensprüfung – Prüfung empfohlen', {
-      Nutzer: user.id,
-      Name: visibleProfileName(user),
-      Kategorie: result.category,
-      Sicherheit: `${Math.round(result.confidence * 100)} %`,
-      Grund: result.reason,
-    });
-    return null;
-  }
-  if (decision !== 'warn') return null;
+  if (decision === 'allow') return { kind: 'allowed' };
   return {
-    id: `gemini-name-${result.category}`,
-    pattern: `KI-${result.category}: ${result.reason}`,
+    kind: 'review',
+    candidate: {
+      pattern: visibleProfileName(user),
+      source: 'ai',
+      reason: result.reason,
+      confidence: result.confidence,
+    },
   };
 }
 
@@ -127,9 +146,12 @@ export function registerNameGuardModule(dependencies: Dependencies): void {
     if (!ctx.group) throw new UserFacingError('error_group_only');
     await dependencies.permissions.requireAdmin(ctx, ctx.group.id);
     const value = commandArguments(ctx)[0]?.toLowerCase();
-    const names = await service.list(ctx.group.id);
     if (value !== 'on' && value !== 'off') {
-      const settings = await dependencies.settings.get(ctx.group.id);
+      const [settings, names, allowedNames] = await Promise.all([
+        dependencies.settings.get(ctx.group.id),
+        service.list(ctx.group.id),
+        service.listAllowed(ctx.group.id),
+      ]);
       await ctx.reply(
         translate(ctx.locale, 'name_guard_status', {
           status: translate(
@@ -137,17 +159,12 @@ export function registerNameGuardModule(dependencies: Dependencies): void {
             settings.nameProtectionEnabled ? 'night_enabled' : 'night_disabled',
           ),
           count: names.length,
+          allowed: allowedNames.length,
         }),
       );
       return;
     }
     if (value === 'on') {
-      await setDisplayNamePresets(
-        dependencies.database,
-        dependencies.redis,
-        ctx.group.id,
-        BigInt(ctx.from?.id ?? dependencies.env.OWNER_TELEGRAM_ID),
-      );
       await Promise.all([
         dependencies.permissions.requireBotRestrictionRights(ctx),
         dependencies.permissions.requireBotInviteRights(ctx),
@@ -184,6 +201,28 @@ export function registerNameGuardModule(dependencies: Dependencies): void {
     await ctx.reply(names.map(({ id, pattern }) => `${id}: ${pattern}`).join('\n') || '–');
   });
 
+  dependencies.bot.command('allowednames', async (ctx) => {
+    if (!ctx.group) throw new UserFacingError('error_group_only');
+    await dependencies.permissions.requireAdmin(ctx, ctx.group.id);
+    const names = await service.listAllowed(ctx.group.id);
+    await ctx.reply(names.map(({ id, displayName }) => `${id}: ${displayName}`).join('\n') || '–');
+  });
+
+  dependencies.bot.command('removeallowedname', async (ctx) => {
+    if (!ctx.group) throw new UserFacingError('error_group_only');
+    await dependencies.permissions.requireAdmin(ctx, ctx.group.id);
+    const id = commandArguments(ctx)[0];
+    if (!id) {
+      await ctx.reply('Bitte gib die ID aus /allowednames an.');
+      return;
+    }
+    if (!(await service.removeAllowed(ctx.group.id, id))) {
+      await ctx.reply('Diese Namensfreigabe wurde nicht gefunden.');
+      return;
+    }
+    await ctx.reply('Die Namensfreigabe wurde entfernt.');
+  });
+
   dependencies.bot.on('chat_join_request', async (ctx, next) => {
     if (!ctx.group) {
       await next();
@@ -195,9 +234,18 @@ export function registerNameGuardModule(dependencies: Dependencies): void {
       return;
     }
     const request = ctx.chatJoinRequest;
-    const violation = await findNameViolation(dependencies, service, ctx.group.id, request.from);
-    if (!violation) {
+    const evaluation = await evaluateName(dependencies, service, ctx.group.id, request.from);
+    if (evaluation.kind === 'allowed') {
       await ctx.api.approveChatJoinRequest(request.chat.id, request.from.id);
+      return;
+    }
+    if (evaluation.kind === 'review') {
+      await requestNameReview(dependencies, ctx, {
+        user: request.from,
+        context: NameReviewContext.JOIN_REQUEST,
+        candidate: evaluation.candidate,
+        requestUserChatId: BigInt(request.user_chat_id),
+      });
       return;
     }
     const privateNotice = translate(ctx.locale, 'name_guard_private_notice', {
@@ -209,13 +257,13 @@ export function registerNameGuardModule(dependencies: Dependencies): void {
       dependencies,
       ctx.group.id,
       request.from,
-      violation.pattern,
+      evaluation.violation.pattern,
       'join-request',
     );
     await dependencies.adminLog.send(ctx.group.id, 'Beitrittsanfrage abgelehnt', {
       Nutzer: request.from.id,
       Name: visibleProfileName(request.from),
-      Treffer: violation.pattern,
+      Treffer: evaluation.violation.pattern,
     });
   });
 
@@ -232,16 +280,23 @@ export function registerNameGuardModule(dependencies: Dependencies): void {
     let removed = false;
     for (const user of ctx.message.new_chat_members) {
       if (user.is_bot) continue;
-      const violation = await findNameViolation(dependencies, service, ctx.group.id, user);
-      if (!violation) continue;
-      const wasRemoved = await removeMemberForName(
-        dependencies,
-        ctx,
-        user,
-        violation.pattern,
-        settings.nameProtectionMessage,
-      );
-      removed = wasRemoved || removed;
+      const evaluation = await evaluateName(dependencies, service, ctx.group.id, user);
+      if (evaluation.kind === 'review') {
+        await requestNameReview(dependencies, ctx, {
+          user,
+          context: NameReviewContext.MEMBER,
+          candidate: evaluation.candidate,
+        });
+      } else if (evaluation.kind === 'forbidden') {
+        const wasRemoved = await removeMemberForName(
+          dependencies,
+          ctx,
+          user,
+          evaluation.violation.pattern,
+          settings.nameProtectionMessage,
+        );
+        removed = wasRemoved || removed;
+      }
     }
     if (!removed) await next();
   });
@@ -265,8 +320,17 @@ export function registerNameGuardModule(dependencies: Dependencies): void {
       await next();
       return;
     }
-    const violation = await findNameViolation(dependencies, service, ctx.group.id, ctx.from);
-    if (!violation) {
+    const evaluation = await evaluateName(dependencies, service, ctx.group.id, ctx.from);
+    if (evaluation.kind === 'allowed') {
+      await next();
+      return;
+    }
+    if (evaluation.kind === 'review') {
+      await requestNameReview(dependencies, ctx, {
+        user: ctx.from,
+        context: NameReviewContext.MEMBER,
+        candidate: evaluation.candidate,
+      });
       await next();
       return;
     }
@@ -274,7 +338,7 @@ export function registerNameGuardModule(dependencies: Dependencies): void {
       dependencies,
       ctx,
       ctx.from,
-      violation.pattern,
+      evaluation.violation.pattern,
       settings.nameProtectionMessage,
     );
   });

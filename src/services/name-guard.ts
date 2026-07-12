@@ -3,6 +3,15 @@ import type { Database } from '../database/client.js';
 import type { RedisClient } from './redis.js';
 
 const CACHE_SECONDS = 60;
+const NAME_FILTER_CACHE_REVISION = 'v2';
+
+export function forbiddenNameCacheKey(groupId: string): string {
+  return `forbidden-names:${NAME_FILTER_CACHE_REVISION}:${groupId}`;
+}
+
+export function allowedNameCacheKey(groupId: string): string {
+  return `allowed-names:${NAME_FILTER_CACHE_REVISION}:${groupId}`;
+}
 
 export interface NormalizedName {
   normalized: string;
@@ -17,6 +26,12 @@ export interface ForbiddenNameMatch {
 interface CachedForbiddenName extends ForbiddenNameMatch {
   normalizedPattern: string;
   compactPattern: string;
+}
+
+interface CachedAllowedName {
+  id: string;
+  displayName: string;
+  normalizedName: string;
 }
 
 export function normalizeName(value: string): NormalizedName {
@@ -75,6 +90,12 @@ export class NameGuardService {
     return forbiddenNames.find((forbidden) => matchesForbiddenName(name, forbidden)) ?? null;
   }
 
+  public async isAllowed(groupId: string, user: TelegramUser): Promise<boolean> {
+    const name = normalizedProfileName(user);
+    const allowedNames = await this.loadAllowed(groupId);
+    return allowedNames.some((allowed) => allowed.normalizedName === name.normalized);
+  }
+
   public async add(groupId: string, pattern: string, actorTelegramId: bigint) {
     const displayPattern = pattern.replace(/\s+/gu, ' ').trim();
     const normalized = normalizeName(displayPattern);
@@ -122,6 +143,46 @@ export class NameGuardService {
     });
   }
 
+  public async allow(groupId: string, displayName: string, actorTelegramId: bigint) {
+    const normalizedName = normalizeName(displayName).normalized;
+    if (!normalizedName || normalizedName.length > 128) return null;
+    const result = await this.database.allowedName.upsert({
+      where: { groupId_normalizedName: { groupId, normalizedName } },
+      create: {
+        groupId,
+        displayName: displayName.trim(),
+        normalizedName,
+        createdByTelegramId: actorTelegramId,
+      },
+      update: {
+        displayName: displayName.trim(),
+        enabled: true,
+        deletedAt: null,
+        createdByTelegramId: actorTelegramId,
+      },
+    });
+    await this.invalidateAllowed(groupId);
+    return result;
+  }
+
+  public async removeAllowed(groupId: string, id: string): Promise<boolean> {
+    const result = await this.database.allowedName.updateMany({
+      where: { id, groupId, deletedAt: null },
+      data: { enabled: false, deletedAt: new Date() },
+    });
+    if (result.count > 0) await this.invalidateAllowed(groupId);
+    return result.count > 0;
+  }
+
+  public async listAllowed(groupId: string) {
+    return this.database.allowedName.findMany({
+      where: { groupId, enabled: true, deletedAt: null },
+      select: { id: true, displayName: true },
+      orderBy: { createdAt: 'asc' },
+      take: 100,
+    });
+  }
+
   private async load(groupId: string): Promise<CachedForbiddenName[]> {
     const key = this.cacheKey(groupId);
     const cached = await this.redis.get(key);
@@ -143,7 +204,27 @@ export class NameGuardService {
     await this.redis.del(this.cacheKey(groupId));
   }
 
+  private async loadAllowed(groupId: string): Promise<CachedAllowedName[]> {
+    const key = this.allowedCacheKey(groupId);
+    const cached = await this.redis.get(key);
+    if (cached) return JSON.parse(cached) as CachedAllowedName[];
+    const entries = await this.database.allowedName.findMany({
+      where: { groupId, enabled: true, deletedAt: null },
+      select: { id: true, displayName: true, normalizedName: true },
+    });
+    await this.redis.set(key, JSON.stringify(entries), 'EX', CACHE_SECONDS);
+    return entries;
+  }
+
+  private async invalidateAllowed(groupId: string): Promise<void> {
+    await this.redis.del(this.allowedCacheKey(groupId));
+  }
+
   private cacheKey(groupId: string): string {
-    return `forbidden-names:${groupId}`;
+    return forbiddenNameCacheKey(groupId);
+  }
+
+  private allowedCacheKey(groupId: string): string {
+    return allowedNameCacheKey(groupId);
   }
 }

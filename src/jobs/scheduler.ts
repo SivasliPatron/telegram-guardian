@@ -6,9 +6,10 @@ import type { RedisClient } from '../services/redis.js';
 import type { BotContext } from '../types/context.js';
 import { localClock, shouldNightModeBeClosed } from '../utils/time.js';
 import { memberPermissions, mutedPermissions } from '../modules/moderation/permissions.js';
-import { ModerationReviewStatus } from '../generated/prisma/enums.js';
+import { ModerationReviewStatus, NameReviewStatus } from '../generated/prisma/enums.js';
 import type { AdminLogService } from '../services/admin-log.js';
 import { enforceApprovedModerationReview } from '../services/moderation-review-enforcement.js';
+import { enforceResolvedNameReview } from '../services/name-review-enforcement.js';
 import type { InactivityCleanupService } from '../services/inactivity-cleanup.js';
 
 type TaskData = { type: 'delete-message'; chatId: string; messageId: number } | { type: 'tick' };
@@ -93,6 +94,9 @@ export class JobScheduler {
       this.expireModerationReviews(),
       this.reconcileApprovedModerationReviews(),
       this.redactResolvedModerationReviews(),
+      this.expireNameReviews(),
+      this.reconcileResolvedNameReviews(),
+      this.redactResolvedNameReviews(),
       this.inactivityCleanup.run(),
     ]);
   }
@@ -225,6 +229,128 @@ export class JobScheduler {
         this.logger.warn(
           { err: error, groupId: review.groupId, reviewId: review.id },
           'Entschiedene Admin-Prüfung konnte in Telegram nicht redigiert werden',
+        );
+      }
+    }
+  }
+
+  private async expireNameReviews(): Promise<void> {
+    await this.database.nameReview.updateMany({
+      where: {
+        status: NameReviewStatus.PENDING,
+        expiresAt: { lte: new Date() },
+        reviewMessageId: null,
+      },
+      data: { status: NameReviewStatus.EXPIRED },
+    });
+    const reviews = await this.database.nameReview.findMany({
+      where: {
+        reviewMessageId: { not: null },
+        OR: [
+          { status: NameReviewStatus.PENDING, expiresAt: { lte: new Date() } },
+          { status: NameReviewStatus.EXPIRED },
+        ],
+      },
+      include: { group: true },
+      take: 100,
+    });
+    for (const review of reviews) {
+      if (review.status === NameReviewStatus.PENDING) {
+        const expired = await this.database.nameReview.updateMany({
+          where: {
+            id: review.id,
+            status: NameReviewStatus.PENDING,
+            expiresAt: { lte: new Date() },
+          },
+          data: { status: NameReviewStatus.EXPIRED },
+        });
+        if (expired.count !== 1) continue;
+      }
+      if (!review.reviewMessageId) continue;
+      await this.bot.api
+        .editMessageText(
+          review.group.telegramId.toString(),
+          Number(review.reviewMessageId),
+          ['🔎 Namensprüfung abgeschlossen', '', '⌛ Prüfung abgelaufen.'].join('\n'),
+          { reply_markup: { inline_keyboard: [] } },
+        )
+        .then(async () => {
+          await this.database.nameReview.updateMany({
+            where: { id: review.id, status: NameReviewStatus.EXPIRED },
+            data: { reviewMessageId: null },
+          });
+        })
+        .catch((error: unknown) => {
+          this.logger.warn(
+            { err: error, groupId: review.groupId, reviewId: review.id },
+            'Abgelaufene Namensprüfung konnte in Telegram nicht abgeschlossen werden',
+          );
+        });
+    }
+  }
+
+  private async reconcileResolvedNameReviews(): Promise<void> {
+    const reviews = await this.database.nameReview.findMany({
+      where: {
+        status: { in: [NameReviewStatus.ALLOWED, NameReviewStatus.FORBIDDEN] },
+        enforcedAt: null,
+      },
+      select: { id: true },
+      take: 50,
+    });
+    for (const review of reviews) {
+      await enforceResolvedNameReview(
+        {
+          adminLog: this.adminLog,
+          bot: this.bot,
+          database: this.database,
+          logger: this.logger,
+          redis: this.redis,
+        },
+        review.id,
+      ).catch((error: unknown) => {
+        this.logger.error(
+          { err: error, reviewId: review.id },
+          'Gespeicherte Namensentscheidung konnte noch nicht vollständig durchgesetzt werden',
+        );
+      });
+    }
+  }
+
+  private async redactResolvedNameReviews(): Promise<void> {
+    const reviews = await this.database.nameReview.findMany({
+      where: {
+        status: { in: [NameReviewStatus.ALLOWED, NameReviewStatus.FORBIDDEN] },
+        reviewMessageId: { not: null },
+      },
+      include: { group: true },
+      take: 100,
+    });
+    for (const review of reviews) {
+      if (!review.reviewMessageId) continue;
+      const decisionText =
+        review.status === NameReviewStatus.ALLOWED
+          ? '✅ Name erlaubt.'
+          : '🚫 Name nicht erlaubt. Der Filter wurde gespeichert.';
+      try {
+        await this.bot.api.editMessageText(
+          review.group.telegramId.toString(),
+          Number(review.reviewMessageId),
+          ['🔎 Namensprüfung abgeschlossen', '', decisionText].join('\n'),
+          { reply_markup: { inline_keyboard: [] } },
+        );
+        await this.database.nameReview.updateMany({
+          where: {
+            id: review.id,
+            status: review.status,
+            reviewMessageId: review.reviewMessageId,
+          },
+          data: { reviewMessageId: null },
+        });
+      } catch (error) {
+        this.logger.warn(
+          { err: error, groupId: review.groupId, reviewId: review.id },
+          'Entschiedene Namensprüfung konnte in Telegram nicht abgeschlossen werden',
         );
       }
     }
