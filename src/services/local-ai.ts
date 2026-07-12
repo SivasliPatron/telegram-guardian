@@ -202,10 +202,13 @@ export class LocalAiClient {
   }
 
   private async request(options: LocalAiGenerateOptions): Promise<string> {
+    const systemInstruction = options.responseSchema
+      ? `${options.systemInstruction}\n\nGib ausschließlich ein JSON-Objekt zurück, das exakt diesem JSON-Schema entspricht: ${JSON.stringify(options.responseSchema)}`
+      : options.systemInstruction;
     const requestBody: Record<string, unknown> = {
       model: this.options.model,
       messages: [
-        { role: 'system', content: options.systemInstruction },
+        { role: 'system', content: systemInstruction },
         { role: 'user', content: options.input },
       ],
       temperature: options.temperature,
@@ -218,12 +221,7 @@ export class LocalAiClient {
     };
     if (options.responseSchema) {
       requestBody.response_format = {
-        type: 'json_schema',
-        json_schema: {
-          name: 'guardian_response',
-          strict: true,
-          schema: options.responseSchema,
-        },
+        type: 'json_object',
       };
     }
 
