@@ -19,6 +19,7 @@ Ein modularer Moderationsbot für große Telegram-Supergruppen. Die Anwendung l�
 - Admin-Log, interne Moderatoren und vertrauenswürdige Mitglieder
 - Rollenabhängige Hilfe, Benutzerinformationen, `/mydata` und `/deletemydata`
 - Eigene Textbefehle pro Gruppe
+- Normale Mitglieder können drei Nicht-KI-Befehle verwenden und müssen danach 15 Minuten warten; `/ki`, vertrauenswürdige Nutzer, Moderatoren und Admins sind ausgenommen
 - Deutsch als Standardsprache; Türkisch und Kurdisch (Kurmancî) mit deutschem Fallback
 - Strukturierte, redigierte Logs, Telegram-Retries mit Backoff, Healthcheck und Graceful Shutdown
 
@@ -151,6 +152,11 @@ Ziele werden mit `@Benutzername` angegeben. Der Nutzer muss dem Bot durch eine A
 - `/ban @Nutzer Grund`, `/tban @Nutzer 3d Grund`, `/unban @Nutzer`, `/kick @Nutzer`
 
 Zeitangaben: `10m`, `2h`, `3d`, `1w`; maximal 366 Tage.
+
+Normale Mitglieder dürfen drei Befehle verwenden; anschließend beginnt eine 15-minütige
+Wartezeit. `/ki` bleibt währenddessen verfügbar und verwendet weiterhin sein eigenes Limit von
+fünf Fragen pro Minute. Befehle von vertrauenswürdigen Nutzern, Moderatoren und Administratoren
+werden nicht gezählt.
 
 ### Administratoren
 

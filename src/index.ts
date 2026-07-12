@@ -9,7 +9,11 @@ import { PermissionService } from './services/permissions.js';
 import { AdminLogService } from './services/admin-log.js';
 import { JobScheduler } from './jobs/scheduler.js';
 import type { Dependencies } from './types/dependencies.js';
-import { deduplicateUpdates, commandRateLimit } from './middleware/security.js';
+import {
+  deduplicateUpdates,
+  commandRateLimit,
+  memberCommandCooldown,
+} from './middleware/security.js';
 import { groupContextMiddleware } from './middleware/group-context.js';
 import { registerModules } from './bot/register-modules.js';
 import { handleBotError } from './middleware/error-handler.js';
@@ -66,6 +70,7 @@ bot.use(deduplicateUpdates(redis));
 bot.use(groupContextMiddleware(dependencies));
 bot.use(memberActivityMiddleware(dependencies));
 bot.use(commandRateLimit(redis));
+bot.use(memberCommandCooldown(dependencies));
 registerModules(dependencies);
 bot.catch((error) => handleBotError(error, logger, adminLog));
 
