@@ -71,18 +71,27 @@ cp .env.example .env
 | `OWNER_TELEGRAM_ID`  | numerische Telegram-ID des globalen Betreibers                  | `123456789`                                                |
 | `HEALTH_PORT`        | interner HTTP-Healthcheck                                       | `3000`                                                     |
 | `POSTGRES_PASSWORD`  | URL-sicheres Kennwort des Compose-PostgreSQL-Dienstes           | ein langes alphanumerisches Zufallskennwort                |
-| `GEMINI_API_KEY`     | API-Schlüssel für Chat sowie optionale KI-Filter                | in Google AI Studio erzeugter Schlüssel                    |
-| `AI_MODEL`           | primäres Gemini-Modell                                          | `gemini-3.1-flash-lite`                                    |
-| `AI_FALLBACK_MODELS` | kommagetrennte Ersatzmodelle bei 404, 408, 429 oder 5xx         | `gemini-3.5-flash,gemini-2.5-flash-lite`                   |
+| `AI_PROVIDER`        | `local`, `gemini` oder lokale KI mit Gemini-Notreserve          | `local`                                                    |
+| `LOCAL_AI_BASE_URL`  | interne Adresse des separaten llama.cpp-Dienstes                | `http://local-ai:8080`                                     |
+| `LOCAL_AI_API_KEY`   | gemeinsamer, zufälliger Schlüssel des lokalen KI-Dienstes       | mindestens 32 ASCII-Zeichen                                |
+| `LOCAL_AI_MODEL`     | Modellalias des lokalen Dienstes                                | `guardian-qwen-3.5-2b`                                     |
+| `LOCAL_ASR_BASE_URL` | Adresse des lokalen Audio-Transkriptionsdienstes                | `http://local-asr:8080`                                    |
+| `LOCAL_ASR_API_KEY`  | Schlüssel des Audio-Transkriptionsdienstes                      | mindestens 32 ASCII-Zeichen                                |
+| `GEMINI_API_KEY`     | nur für `gemini` oder `local_gemini_fallback`                   | in Google AI Studio erzeugter Schlüssel                    |
+| `AI_MODEL`           | primäres Gemini-Modell bei aktivierter Gemini-Nutzung           | `gemini-3.1-flash-lite`                                    |
+| `AI_FALLBACK_MODELS` | kommagetrennte Gemini-Ersatzmodelle                             | `gemini-3.5-flash,gemini-2.5-flash-lite`                   |
 
 Alle Pflichtwerte werden beim Start mit Zod validiert. `.env` ist per `.gitignore` und `.dockerignore` ausgeschlossen.
 
-Bei einem Modelllimit oder vorübergehenden Gemini-Ausfall versucht der Bot die Einträge aus
-`AI_FALLBACK_MODELS` der Reihe nach. Ein gesperrtes Modell wird während der von Google genannten
-Wartezeit übersprungen. Authentifizierungs- und Eingabefehler lösen bewusst keinen Modellwechsel
-aus. Die Modelle `gemini-2.5-flash-lite` und `gemini-2.5-flash` sind nur vorübergehende Reserven und
-werden laut Google am 16. Oktober 2026 abgeschaltet; sie können danach ohne Codeänderung aus der
-Umgebungsvariable entfernt werden.
+Mit `AI_PROVIDER=local` laufen Textmoderation, sichtbare Namensprüfung und `/ki` über den separaten
+Qwen-3.5-2B-Dienst. Sprachnachrichten werden zuerst lokal mit whisper.cpp transkribiert und danach
+vom selben 2B-Sprachmodell bewertet. Dadurch gibt es kein RPD-/RPM-Kontingent eines API-Anbieters;
+die praktische Grenze ist stattdessen die gebuchte CPU-Leistung und Warteschlange. Moderation hat
+Vorrang, und höchstens eine `/ki`-Antwort belegt gleichzeitig einen Modellslot.
+
+Die fertigen Images und JustRunMyApp-Schritte stehen in `local-ai/README.md` und
+`local-asr/README.md`. Für einen reinen lokalen Betrieb darf `GEMINI_API_KEY` entfallen. Bei
+`AI_PROVIDER=local_gemini_fallback` wird Gemini nur versucht, wenn der lokale Dienst ausfällt.
 
 ## Start mit Docker Compose
 

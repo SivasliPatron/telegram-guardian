@@ -132,7 +132,7 @@ describe('KI-Dienst mit Modellfallback', () => {
 
     await expect(service.classify('Testbeleidigung')).resolves.toMatchObject({ violation: true });
     const [bindings, message] = loggerWarn.mock.calls.at(-1) ?? [];
-    expect(message).toBe('Gemini-Cache konnte nicht geschrieben werden');
+    expect(message).toBe('KI-Cache konnte nicht geschrieben werden');
     expect(bindings).toBeTypeOf('object');
     if (typeof bindings !== 'object' || bindings === null || !('cacheKey' in bindings)) {
       throw new Error('Cache-Key fehlt im Warnprotokoll');

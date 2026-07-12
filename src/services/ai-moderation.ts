@@ -1,10 +1,18 @@
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import { GoogleGenAI } from '@google/genai';
 import type { Logger } from 'pino';
 import { z } from 'zod';
 import { parseGeminiModelCandidates } from '../config/ai-models.js';
 import type { Env } from '../config/env.js';
 import { GeminiModelFallback } from './gemini-model-fallback.js';
+import {
+  LocalAiClient,
+  LocalAiHttpError,
+  LocalAiQueueFullError,
+  LocalAiQueueTimeoutError,
+  LocalAiUnavailableError,
+} from './local-ai.js';
+import { LocalAsrClient, LocalAsrHttpError } from './local-asr.js';
 import type { RedisClient } from './redis.js';
 
 export function limitModerationReason(reason: string, maximumLength = 180): string {
@@ -14,39 +22,65 @@ export function limitModerationReason(reason: string, maximumLength = 180): stri
     : normalized;
 }
 
+function sanitizeModerationReason(reason: string): string {
+  return reason
+    .normalize('NFKC')
+    .replace(/[\p{Cc}\p{Cf}]+/gu, ' ')
+    .replace(/@/gu, '＠')
+    .replace(/\s+/gu, ' ')
+    .trim();
+}
+
 const moderationReasonSchema = z
   .string()
-  .trim()
-  .min(1)
+  .transform((reason) => sanitizeModerationReason(reason))
+  .pipe(z.string().min(1))
   .transform((reason) => limitModerationReason(reason));
 
-const moderationResultSchema = z.object({
-  violation: z.boolean(),
-  reviewRecommended: z.boolean(),
-  category: z.enum([
-    'none',
-    'insult',
-    'sexual_content',
-    'sexual_abuse',
-    'religious_abuse',
-    'political',
-    'threat',
-    'harassment',
-    'hate_or_discrimination',
-  ]),
-  confidence: z.number().min(0).max(1),
-  reason: moderationReasonSchema,
-});
+const moderationResultSchema = z
+  .object({
+    violation: z.boolean(),
+    reviewRecommended: z.boolean(),
+    category: z.enum([
+      'none',
+      'insult',
+      'sexual_content',
+      'sexual_abuse',
+      'religious_abuse',
+      'political',
+      'threat',
+      'harassment',
+      'hate_or_discrimination',
+    ]),
+    confidence: z.number().min(0).max(1),
+    reason: moderationReasonSchema,
+  })
+  .strict()
+  .superRefine((result, context) => {
+    const isAllowed = !result.violation && !result.reviewRecommended && result.category === 'none';
+    const needsReview = !result.violation && result.reviewRecommended && result.category !== 'none';
+    const isViolation = result.violation && !result.reviewRecommended && result.category !== 'none';
+    if (!isAllowed && !needsReview && !isViolation) {
+      context.addIssue({ code: 'custom', message: 'Widersprüchliches Moderationsergebnis' });
+    }
+  });
 
 export type AiModerationResult = z.infer<typeof moderationResultSchema>;
 export type AiModerationDecision = 'allow' | 'log' | 'warn';
 
-const displayNameResultSchema = z.object({
-  violation: z.boolean(),
-  category: z.enum(['none', 'insult', 'political']),
-  confidence: z.number().min(0).max(1),
-  reason: moderationReasonSchema,
-});
+const displayNameResultSchema = z
+  .object({
+    violation: z.boolean(),
+    category: z.enum(['none', 'insult', 'political']),
+    confidence: z.number().min(0).max(1),
+    reason: moderationReasonSchema,
+  })
+  .strict()
+  .superRefine((result, context) => {
+    if (result.violation !== (result.category !== 'none')) {
+      context.addIssue({ code: 'custom', message: 'Widersprüchliches Namensergebnis' });
+    }
+  });
 
 export type DisplayNameModerationResult = z.infer<typeof displayNameResultSchema>;
 
@@ -80,7 +114,7 @@ const responseSchema = {
       type: 'number',
       minimum: 0,
       maximum: 1,
-      description: 'Calibrated confidence that the text is a violation.',
+      description: 'Confidence in the assigned verdict, not an objective probability.',
     },
     reason: {
       type: 'string',
@@ -115,6 +149,8 @@ const displayNameResponseSchema = {
   required: ['violation', 'category', 'confidence', 'reason'],
   additionalProperties: false,
 } as const;
+
+const MODERATION_POLICY_CACHE_REVISION = '2026-07-12-local-qwen-v1';
 
 export const AI_MODERATION_SYSTEM_INSTRUCTION = `Du bist ein vorsichtiger Inhaltsmoderator für eine deutsch-, türkisch- und kurmancîsprachige Telegram-Gruppe.
 Bewerte immer die vollständige wörtliche Gesamtbedeutung statt einzelner Reizwörter. Erfinde niemals Sarkasmus, sexuelle Doppeldeutigkeiten oder eine versteckte Beleidigung, wenn der gesamte Satz eine schlüssige harmlose Alltagsbedeutung hat.
@@ -217,19 +253,35 @@ export function currentDateInTimeZone(date: Date, timeZone: string): string {
   return `${value('year')}-${value('month')}-${value('day')}`;
 }
 
+function safeAiErrorDetails(error: unknown): Record<string, unknown> {
+  if (!(error instanceof Error)) return { name: 'UnknownError' };
+  const details: Record<string, unknown> = { name: error.name };
+  if ('status' in error && typeof error.status === 'number') details.status = error.status;
+  return details;
+}
+
+function mayUseGeminiFallback(error: unknown): boolean {
+  if (error instanceof LocalAiQueueFullError || error instanceof LocalAiQueueTimeoutError) {
+    return false;
+  }
+  if (error instanceof LocalAiHttpError || error instanceof LocalAsrHttpError) {
+    return error.status === 408 || error.status === 429 || error.status >= 500;
+  }
+  if (error instanceof LocalAiUnavailableError || error instanceof TypeError) return true;
+  return error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
+}
+
 export function decideAiModeration(
   result: AiModerationResult,
   logThreshold: number,
   warnThreshold: number,
 ): AiModerationDecision {
-  if (result.reviewRecommended) {
+  // Kept for configuration compatibility; an uncalibrated LLM score never triggers a sanction.
+  void warnThreshold;
+  if (result.reviewRecommended) return 'log';
+  if (result.category !== 'none' && result.violation && result.confidence >= logThreshold) {
     return 'log';
   }
-  if (result.violation && result.category !== 'none' && result.confidence >= warnThreshold) {
-    return 'warn';
-  }
-  if (result.category !== 'none' && result.violation && result.confidence >= logThreshold)
-    return 'log';
   return 'allow';
 }
 
@@ -238,16 +290,20 @@ export function decideDisplayNameModeration(
   logThreshold: number,
   kickThreshold: number,
 ): AiModerationDecision {
+  // Deterministic name rules may still remove users; an AI-only result is review-only.
+  void kickThreshold;
   if (!result.violation || result.category === 'none' || result.confidence < logThreshold) {
     return 'allow';
   }
-  return result.confidence >= kickThreshold ? 'warn' : 'log';
+  return 'log';
 }
 
 export class AiModerationService {
   private readonly client: GoogleGenAI | null;
   private readonly chatClient: GoogleGenAI | null;
   private readonly audioClient: GoogleGenAI | null;
+  private readonly localClient: LocalAiClient | null;
+  private readonly localAsrClient: LocalAsrClient | null;
   private readonly modelFallback: GeminiModelFallback;
   private readonly modelCacheNamespace: string;
 
@@ -257,60 +313,116 @@ export class AiModerationService {
     private readonly logger: Logger,
   ) {
     const models = parseGeminiModelCandidates(env.AI_MODEL, env.AI_FALLBACK_MODELS);
+    const usesGemini = env.AI_PROVIDER !== 'local';
+    const usesLocal = env.AI_PROVIDER !== 'gemini';
     this.modelFallback = new GeminiModelFallback(models, logger);
-    this.modelCacheNamespace = createHash('sha256').update(models.join('\0')).digest('hex');
+    this.modelCacheNamespace = createHash('sha256')
+      .update(
+        [
+          MODERATION_POLICY_CACHE_REVISION,
+          env.AI_PROVIDER,
+          env.LOCAL_AI_MODEL,
+          env.LOCAL_AI_MODEL_REVISION,
+          ...models,
+          AI_MODERATION_SYSTEM_INSTRUCTION,
+          DISPLAY_NAME_SYSTEM_INSTRUCTION,
+          JSON.stringify(responseSchema),
+          JSON.stringify(displayNameResponseSchema),
+        ].join('\0'),
+      )
+      .digest('hex');
     this.client =
-      env.AI_FILTER_ENABLED && env.GEMINI_API_KEY
+      usesGemini && env.AI_FILTER_ENABLED && env.GEMINI_API_KEY
         ? new GoogleGenAI({
             apiKey: env.GEMINI_API_KEY,
             httpOptions: { timeout: env.AI_FILTER_TIMEOUT_MS },
           })
         : null;
-    this.chatClient = env.GEMINI_API_KEY
-      ? new GoogleGenAI({
-          apiKey: env.GEMINI_API_KEY,
-          httpOptions: { timeout: Math.max(env.AI_FILTER_TIMEOUT_MS, 15_000) },
-        })
-      : null;
+    this.chatClient =
+      usesGemini && env.GEMINI_API_KEY
+        ? new GoogleGenAI({
+            apiKey: env.GEMINI_API_KEY,
+            httpOptions: { timeout: Math.max(env.AI_FILTER_TIMEOUT_MS, 15_000) },
+          })
+        : null;
     this.audioClient =
-      env.AI_FILTER_ENABLED && env.GEMINI_API_KEY
+      usesGemini && env.AI_FILTER_ENABLED && env.GEMINI_API_KEY
         ? new GoogleGenAI({
             apiKey: env.GEMINI_API_KEY,
             httpOptions: { timeout: env.AI_AUDIO_TIMEOUT_MS },
           })
         : null;
+    this.localClient =
+      usesLocal && env.LOCAL_AI_BASE_URL && env.LOCAL_AI_API_KEY
+        ? new LocalAiClient({
+            baseUrl: env.LOCAL_AI_BASE_URL,
+            apiKey: env.LOCAL_AI_API_KEY,
+            model: env.LOCAL_AI_MODEL,
+            requestTimeoutMs: env.LOCAL_AI_TIMEOUT_MS,
+            chatTimeoutMs: env.LOCAL_AI_CHAT_TIMEOUT_MS,
+            maximumConcurrency: env.LOCAL_AI_MAX_CONCURRENCY,
+            maximumQueueLength: env.LOCAL_AI_MAX_QUEUE,
+            queueTimeoutMs: env.LOCAL_AI_QUEUE_TIMEOUT_MS,
+          })
+        : null;
+    this.localAsrClient =
+      usesLocal && env.AI_AUDIO_FILTER_ENABLED && env.LOCAL_ASR_BASE_URL && env.LOCAL_ASR_API_KEY
+        ? new LocalAsrClient({
+            baseUrl: env.LOCAL_ASR_BASE_URL,
+            apiKey: env.LOCAL_ASR_API_KEY,
+            timeoutMs: env.LOCAL_ASR_TIMEOUT_MS,
+            maximumAudioBytes: env.AI_AUDIO_MAX_BYTES,
+          })
+        : null;
   }
 
   public get enabled(): boolean {
-    return this.client !== null;
+    return this.env.AI_FILTER_ENABLED && (this.localClient !== null || this.client !== null);
   }
 
   public get chatEnabled(): boolean {
-    return this.chatClient !== null;
+    return this.localClient !== null || this.chatClient !== null;
   }
 
   public async answerQuestion(questionText: string): Promise<string | null> {
-    const chatClient = this.chatClient;
-    if (!chatClient) return null;
+    if (!this.chatEnabled) return null;
     const question = questionText.trim().slice(0, 1_500);
     if (question.length < 2) return null;
     const currentDate = currentDateInTimeZone(new Date(), this.env.DEFAULT_TIMEZONE);
+    const systemInstruction = `${AI_CHAT_SYSTEM_INSTRUCTION}\nDas aktuelle Datum ist ${currentDate} in der Zeitzone ${this.env.DEFAULT_TIMEZONE}. Verwende dieses Datum verbindlich und ersetze damit jede ältere interne Datumsannahme. Behaupte bei zeitkritischen Themen ohne verlässliche Live-Daten nicht, den neuesten Stand zu kennen.`;
+    const input = `Aktueller Datumskontext: ${currentDate} (${this.env.DEFAULT_TIMEZONE}).\nBeantworte diese Frage aus der Telegram-Gruppe:\n${JSON.stringify(question)}`;
 
     try {
-      return await this.modelFallback.run('chat', async (model) => {
-        const interaction = await chatClient.interactions.create({
-          model,
-          system_instruction: `${AI_CHAT_SYSTEM_INSTRUCTION}\nDas aktuelle Datum ist ${currentDate} in der Zeitzone ${this.env.DEFAULT_TIMEZONE}. Verwende dieses Datum verbindlich und ersetze damit jede ältere interne Datumsannahme. Behaupte bei zeitkritischen Themen ohne verlässliche Live-Daten nicht, den neuesten Stand zu kennen.`,
-          input: `Aktueller Datumskontext: ${currentDate} (${this.env.DEFAULT_TIMEZONE}).\nBeantworte diese Frage aus der Telegram-Gruppe:\n${JSON.stringify(question)}`,
-          generation_config: { temperature: 0.4, max_output_tokens: 800 },
-          store: false,
-        });
-        const answer = limitAiChatAnswer(interaction.output_text ?? '');
-        if (!answer) throw new Error('Gemini lieferte keine Chat-Antwort');
-        return answer;
-      });
+      const answer = await this.runProvider(
+        'chat',
+        this.chatClient,
+        async (localClient) =>
+          await localClient.generate({
+            systemInstruction,
+            input,
+            temperature: 0.4,
+            maxTokens: 400,
+            priority: 'chat',
+          }),
+        async (chatClient, model) => {
+          const interaction = await chatClient.interactions.create({
+            model,
+            system_instruction: systemInstruction,
+            input,
+            generation_config: { temperature: 0.4, max_output_tokens: 800 },
+            store: false,
+          });
+          const text = interaction.output_text ?? '';
+          if (!text) throw new Error('Gemini lieferte keine Chat-Antwort');
+          return text;
+        },
+      );
+      return limitAiChatAnswer(answer);
     } catch (error) {
-      this.logger.warn({ err: error }, 'Gemini konnte die /ki-Frage nicht beantworten');
+      this.logger.warn(
+        { error: safeAiErrorDetails(error) },
+        'Die KI konnte die /ki-Frage nicht beantworten',
+      );
       return null;
     }
   }
@@ -343,10 +455,9 @@ export class AiModerationService {
     const text = messageText.trim().slice(0, 4_096);
     if (text.length < 2) return null;
     const deterministicReview = spacedCodedInsultReview(text);
-    const client = this.client;
-    if (!client) return deterministicReview;
+    if (!this.enabled) return deterministicReview;
 
-    const digest = createHash('sha256')
+    const digest = createHmac('sha256', this.env.BOT_TOKEN)
       .update(`${this.modelCacheNamespace}\0${text}`)
       .digest('hex');
     const cacheKey = `ai-moderation:v4:${digest}`;
@@ -354,38 +465,60 @@ export class AiModerationService {
     if (cachedResult) return cachedResult;
 
     try {
-      const result = await this.modelFallback.run('text-moderation', async (model) => {
-        const interaction = await client.interactions.create({
-          model,
-          system_instruction: AI_MODERATION_SYSTEM_INSTRUCTION,
-          input: `Bewerte diese Telegram-Nachricht als Moderationsfall:\n${JSON.stringify(text)}`,
-          response_format: {
-            type: 'text',
-            mime_type: 'application/json',
-            schema: responseSchema,
-          },
-          generation_config: { temperature: 0 },
-          store: false,
-        });
-        if (!interaction.output_text) throw new Error('Gemini lieferte keine Textantwort');
-        return this.parseModerationResult(interaction.output_text, text);
-      });
+      const input = `Bewerte diese Telegram-Nachricht als Moderationsfall:\n${JSON.stringify(text)}`;
+      const result = await this.runProvider(
+        'text-moderation',
+        this.client,
+        async (localClient) => {
+          const output = await localClient.generate({
+            systemInstruction: AI_MODERATION_SYSTEM_INSTRUCTION,
+            input,
+            temperature: 0,
+            maxTokens: 160,
+            priority: 'moderation',
+            responseSchema,
+          });
+          return this.parseModerationResult(output, text);
+        },
+        async (client, model) => {
+          const interaction = await client.interactions.create({
+            model,
+            system_instruction: AI_MODERATION_SYSTEM_INSTRUCTION,
+            input,
+            response_format: {
+              type: 'text',
+              mime_type: 'application/json',
+              schema: responseSchema,
+            },
+            generation_config: { temperature: 0, max_output_tokens: 160 },
+            store: false,
+          });
+          if (!interaction.output_text) throw new Error('Gemini lieferte keine Textantwort');
+          return this.parseModerationResult(interaction.output_text, text);
+        },
+      );
       await this.writeCached(cacheKey, result);
       return result;
     } catch (error) {
       this.logger.warn(
-        { err: error },
-        'Gemini-Moderation fehlgeschlagen; lokale Schutzregeln werden verwendet',
+        { error: safeAiErrorDetails(error) },
+        'KI-Moderation fehlgeschlagen; lokale Schutzregeln werden verwendet',
       );
       return deterministicReview;
     }
   }
 
   public async classifyAudio(wavAudio: Buffer): Promise<AiModerationResult | null> {
-    const audioClient = this.audioClient;
-    if (!audioClient || !this.env.AI_AUDIO_FILTER_ENABLED || wavAudio.length === 0) return null;
+    if (
+      !this.enabled ||
+      !this.env.AI_AUDIO_FILTER_ENABLED ||
+      wavAudio.length === 0 ||
+      wavAudio.length > this.env.AI_AUDIO_MAX_BYTES
+    ) {
+      return null;
+    }
 
-    const digest = createHash('sha256')
+    const digest = createHmac('sha256', this.env.BOT_TOKEN)
       .update(`${this.modelCacheNamespace}\0audio\0`)
       .update(wavAudio)
       .digest('hex');
@@ -394,36 +527,60 @@ export class AiModerationService {
     if (cachedResult) return cachedResult;
 
     try {
-      const result = await this.modelFallback.run('audio-moderation', async (model) => {
-        const interaction = await audioClient.interactions.create({
-          model,
-          system_instruction: AI_MODERATION_SYSTEM_INSTRUCTION,
-          input: [
-            {
+      const result = await this.runProvider(
+        'audio-moderation',
+        this.audioClient,
+        async (localClient) => {
+          const localAsrClient = this.localAsrClient;
+          if (!localAsrClient) {
+            throw new Error('Der lokale Transkriptionsdienst ist nicht konfiguriert.');
+          }
+          const transcript = await localAsrClient.transcribe(wavAudio);
+          const input = `Bewerte das automatisch erzeugte Transkript einer Telegram-Sprachnachricht. Einzelne Wörter können durch die Spracherkennung fehlerhaft sein; entscheide deshalb kontextbezogen:\n${JSON.stringify(transcript)}`;
+          const output = await localClient.generate({
+            systemInstruction: AI_MODERATION_SYSTEM_INSTRUCTION,
+            input,
+            temperature: 0,
+            maxTokens: 160,
+            priority: 'moderation',
+            responseSchema,
+          });
+          return this.parseModerationResult(output, transcript);
+        },
+        async (audioClient, model) => {
+          const interaction = await audioClient.interactions.create({
+            model,
+            system_instruction: AI_MODERATION_SYSTEM_INSTRUCTION,
+            input: [
+              {
+                type: 'text',
+                text: 'Höre die gesprochene Nachricht vollständig an. Bewerte ausschließlich den gesprochenen Inhalt als Moderationsfall. Berücksichtige Deutsch, Türkisch und Kurmancî.',
+              },
+              {
+                type: 'audio',
+                data: wavAudio.toString('base64'),
+                mime_type: 'audio/wav',
+              },
+            ],
+            response_format: {
               type: 'text',
-              text: 'Höre die gesprochene Nachricht vollständig an. Bewerte ausschließlich den gesprochenen Inhalt als Moderationsfall. Berücksichtige Deutsch, Türkisch und Kurmancî.',
+              mime_type: 'application/json',
+              schema: responseSchema,
             },
-            {
-              type: 'audio',
-              data: wavAudio.toString('base64'),
-              mime_type: 'audio/wav',
-            },
-          ],
-          response_format: {
-            type: 'text',
-            mime_type: 'application/json',
-            schema: responseSchema,
-          },
-          generation_config: { temperature: 0 },
-          store: false,
-        });
-        if (!interaction.output_text) throw new Error('Gemini lieferte keine Textantwort');
-        return this.parseModerationResult(interaction.output_text);
-      });
+            generation_config: { temperature: 0, max_output_tokens: 160 },
+            store: false,
+          });
+          if (!interaction.output_text) throw new Error('Gemini lieferte keine Textantwort');
+          return this.parseModerationResult(interaction.output_text);
+        },
+      );
       await this.writeCached(cacheKey, result);
       return result;
     } catch (error) {
-      this.logger.warn({ err: error }, 'Gemini-Audiomoderation fehlgeschlagen; Audio erlaubt');
+      this.logger.warn(
+        { error: safeAiErrorDetails(error) },
+        'KI-Audiomoderation fehlgeschlagen; Audio erlaubt',
+      );
       return null;
     }
   }
@@ -431,12 +588,11 @@ export class AiModerationService {
   public async classifyDisplayName(
     visibleName: string,
   ): Promise<DisplayNameModerationResult | null> {
-    const client = this.client;
-    if (!client || !this.env.AI_NAME_FILTER_ENABLED) return null;
+    if (!this.enabled || !this.env.AI_NAME_FILTER_ENABLED) return null;
     const name = visibleName.normalize('NFKC').trim().slice(0, 128);
     if (name.length < 2) return null;
 
-    const digest = createHash('sha256')
+    const digest = createHmac('sha256', this.env.BOT_TOKEN)
       .update(`${this.modelCacheNamespace}\0name\0${name}`)
       .digest('hex');
     const cacheKey = `ai-name-moderation:v1:${digest}`;
@@ -447,32 +603,78 @@ export class AiModerationService {
         if (parsed.success) return parsed.data;
       }
     } catch (error) {
-      this.logger.warn({ err: error, cacheKey }, 'Gemini-Namenscache konnte nicht gelesen werden');
+      this.logger.warn({ err: error, cacheKey }, 'KI-Namenscache konnte nicht gelesen werden');
     }
 
     try {
-      const result = await this.modelFallback.run('name-moderation', async (model) => {
-        const interaction = await client.interactions.create({
-          model,
-          system_instruction: DISPLAY_NAME_SYSTEM_INSTRUCTION,
-          input: `Bewerte ausschließlich diesen sichtbaren Vor- und Nachnamen:\n${JSON.stringify(name)}`,
-          response_format: {
-            type: 'text',
-            mime_type: 'application/json',
-            schema: displayNameResponseSchema,
-          },
-          generation_config: { temperature: 0 },
-          store: false,
-        });
-        if (!interaction.output_text) throw new Error('Gemini lieferte keine Textantwort');
-        return displayNameResultSchema.parse(JSON.parse(interaction.output_text));
-      });
+      const input = `Bewerte ausschließlich diesen sichtbaren Vor- und Nachnamen:\n${JSON.stringify(name)}`;
+      const result = await this.runProvider(
+        'name-moderation',
+        this.client,
+        async (localClient) => {
+          const output = await localClient.generate({
+            systemInstruction: DISPLAY_NAME_SYSTEM_INSTRUCTION,
+            input,
+            temperature: 0,
+            maxTokens: 120,
+            priority: 'moderation',
+            responseSchema: displayNameResponseSchema,
+          });
+          return displayNameResultSchema.parse(JSON.parse(output));
+        },
+        async (client, model) => {
+          const interaction = await client.interactions.create({
+            model,
+            system_instruction: DISPLAY_NAME_SYSTEM_INSTRUCTION,
+            input,
+            response_format: {
+              type: 'text',
+              mime_type: 'application/json',
+              schema: displayNameResponseSchema,
+            },
+            generation_config: { temperature: 0, max_output_tokens: 120 },
+            store: false,
+          });
+          if (!interaction.output_text) throw new Error('Gemini lieferte keine Textantwort');
+          return displayNameResultSchema.parse(JSON.parse(interaction.output_text));
+        },
+      );
       await this.writeCached(cacheKey, result);
       return result;
     } catch (error) {
-      this.logger.warn({ err: error }, 'Gemini-Namensprüfung fehlgeschlagen; Name erlaubt');
+      this.logger.warn(
+        { error: safeAiErrorDetails(error) },
+        'KI-Namensprüfung fehlgeschlagen; Name erlaubt',
+      );
       return null;
     }
+  }
+
+  private async runProvider<T>(
+    operation: string,
+    geminiClient: GoogleGenAI | null,
+    localAttempt: (client: LocalAiClient) => Promise<T>,
+    geminiAttempt: (client: GoogleGenAI, model: string) => Promise<T>,
+  ): Promise<T> {
+    if (this.env.AI_PROVIDER !== 'gemini') {
+      const localClient = this.localClient;
+      if (!localClient) throw new Error('Der lokale KI-Client ist nicht konfiguriert.');
+      try {
+        return await localAttempt(localClient);
+      } catch (error) {
+        if (this.env.AI_PROVIDER === 'local' || !mayUseGeminiFallback(error)) throw error;
+        this.logger.warn(
+          { error: safeAiErrorDetails(error), operation },
+          'Lokale KI fehlgeschlagen; Gemini-Notreserve wird versucht',
+        );
+      }
+    }
+
+    if (!geminiClient) throw new Error('Der Gemini-Client ist nicht konfiguriert.');
+    return await this.modelFallback.run(
+      operation,
+      async (model) => await geminiAttempt(geminiClient, model),
+    );
   }
 
   private async readCached(cacheKey: string): Promise<AiModerationResult | null> {
@@ -482,7 +684,7 @@ export class AiModerationService {
       const parsed = moderationResultSchema.safeParse(JSON.parse(cached));
       return parsed.success ? parsed.data : null;
     } catch (error) {
-      this.logger.warn({ err: error, cacheKey }, 'Gemini-Cache konnte nicht gelesen werden');
+      this.logger.warn({ err: error, cacheKey }, 'KI-Cache konnte nicht gelesen werden');
       return null;
     }
   }
@@ -496,7 +698,7 @@ export class AiModerationService {
     try {
       await this.redis.set(cacheKey, JSON.stringify(value), 'EX', this.env.AI_FILTER_CACHE_TTL_SEC);
     } catch (error) {
-      this.logger.warn({ err: error, cacheKey }, 'Gemini-Cache konnte nicht geschrieben werden');
+      this.logger.warn({ err: error, cacheKey }, 'KI-Cache konnte nicht geschrieben werden');
     }
   }
 }
