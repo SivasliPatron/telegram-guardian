@@ -22,7 +22,11 @@ import { hasMinimumRole } from '../../services/permissions.js';
 import { countEnabledPresetFilters, PRESET_FILTERS, setPresetFilters } from './presets.js';
 import type { BotContext } from '../../types/context.js';
 import type { AiModerationResult } from '../../services/ai-moderation.js';
-import { audioWithinModerationLimits, convertAudioToWav } from '../../services/audio.js';
+import {
+  audioWithinModerationLimits,
+  convertAudioToWav,
+  readAudioResponseBuffer,
+} from '../../services/audio.js';
 import {
   banAfterWarningThreshold,
   shouldApplyWarningBan,
@@ -437,16 +441,10 @@ export function registerFilterModule(dependencies: Dependencies): void {
       });
       if (!response.ok)
         throw new Error(`Telegram-Audiodownload fehlgeschlagen: ${response.status}`);
-      const contentLength = Number(response.headers.get('content-length'));
-      if (Number.isFinite(contentLength) && contentLength > dependencies.env.AI_AUDIO_MAX_BYTES) {
-        await next();
-        return;
-      }
-      const downloadedAudio = Buffer.from(await response.arrayBuffer());
-      if (downloadedAudio.length > dependencies.env.AI_AUDIO_MAX_BYTES) {
-        await next();
-        return;
-      }
+      const downloadedAudio = await readAudioResponseBuffer(
+        response,
+        dependencies.env.AI_AUDIO_MAX_BYTES,
+      );
       const wavAudio = await convertAudioToWav(
         downloadedAudio,
         dependencies.env.AI_AUDIO_TIMEOUT_MS,

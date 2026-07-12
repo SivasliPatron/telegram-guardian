@@ -34,7 +34,7 @@ const de = {
   setup_complete:
     '✅ Die professionellen Gruppenregeln und die mehrsprachigen Schutzfilter wurden eingerichtet.',
   name_guard_status:
-    'Namensschutz: {status}\nVerbotene Einträge: {count}\nVerwendung: /nameguard on oder /nameguard off',
+    'Namensschutz: {status}\nBestätigte Sperrfilter: {count}\nNamensfreigaben: {allowed}\nVerwendung: /nameguard on oder /nameguard off',
   name_guard_removed: '🚫 <b>{name}</b> wird entfernt. {message}',
   name_guard_private_notice:
     '{message}\n\nGeprüft wird nur dein sichtbarer Vor- und Nachname, nicht dein @Benutzername. Ändere deinen sichtbaren Namen; danach kannst du erneut beitreten.',
@@ -77,7 +77,7 @@ const de = {
     '⏸ Die Inaktivitätsbereinigung ist ausgeschaltet. Offene Hinweise wurden für noch nicht entfernte Mitglieder abgebrochen; bereits begonnene Entfernungen werden sicher abgeschlossen.',
   log_channel_saved: 'Der Admin-Log-Kanal wurde erfolgreich eingerichtet.',
   privacy_data:
-    'Gespeichert: Telegram-ID, öffentlicher Profilname, Gruppenrolle, Beitritts-/Aktivitätszeit, vorübergehende Inaktivitätsfristen und Moderationshistorie. Für die Inaktivitätsprüfung wird kein Nachrichteninhalt gespeichert. Potenziell kritische Nachrichten werden für die Admin-Prüfung höchstens 24 Stunden zwischengespeichert; bei einer bestätigten Verwarnung bleibt der Text als Moderationsgrund und automatischer Wortfilter erhalten, bis dieser Filter entfernt wird.',
+    'Gespeichert: Telegram-ID, öffentlicher Profilname, Gruppenrolle, Beitritts-/Aktivitätszeit, vorübergehende Inaktivitätsfristen und Moderationshistorie. Für die Inaktivitätsprüfung wird kein Nachrichteninhalt gespeichert. Potenziell kritische Nachrichten und Namensentscheidungen bleiben höchstens 24 Stunden offen. Bestätigte Nachrichten- und Namensfilter sowie ausdrücklich erlaubte sichtbare Namen bleiben gespeichert, bis ein Admin sie entfernt.',
   privacy_deleted:
     'Entfernbare Profildaten wurden anonymisiert. Sicherheitsrelevante Moderationshistorie bleibt mit minimaler Telegram-ID-Zuordnung erhalten.',
   userinfo:

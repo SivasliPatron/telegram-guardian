@@ -10,6 +10,76 @@ export interface AudioCandidate {
   fileSize?: number;
 }
 
+export async function readAudioResponseBuffer(
+  response: Response,
+  maximumBytes: number,
+): Promise<Buffer> {
+  if (!Number.isSafeInteger(maximumBytes) || maximumBytes <= 0) {
+    throw new Error('Ungültiges Audio-Größenlimit');
+  }
+
+  const rawContentLength = response.headers.get('content-length');
+  if (rawContentLength !== null) {
+    const contentLength = Number(rawContentLength);
+    if (!Number.isSafeInteger(contentLength) || contentLength < 0) {
+      throw new Error('Ungültige Audio-Größenangabe');
+    }
+    if (contentLength > maximumBytes) {
+      await response.body?.cancel();
+      throw new Error('Heruntergeladenes Audio überschreitet das Größenlimit');
+    }
+  }
+
+  const body = response.body;
+  if (!body) return Buffer.alloc(0);
+  const reader = body.getReader();
+  const chunks: Buffer[] = [];
+  let receivedBytes = 0;
+  for (;;) {
+    const chunk = await reader.read();
+    if (chunk.done) break;
+    receivedBytes += chunk.value.byteLength;
+    if (receivedBytes > maximumBytes) {
+      await reader.cancel();
+      throw new Error('Heruntergeladenes Audio überschreitet das Größenlimit');
+    }
+    chunks.push(Buffer.from(chunk.value));
+  }
+  return Buffer.concat(chunks, receivedBytes);
+}
+
+/** Replaces ffmpeg's unknown pipe sizes with the actual in-memory WAV sizes. */
+export function finalizePipeWavHeader(wavAudio: Buffer): Buffer {
+  if (
+    wavAudio.length < 44 ||
+    wavAudio.toString('ascii', 0, 4) !== 'RIFF' ||
+    wavAudio.toString('ascii', 8, 12) !== 'WAVE' ||
+    wavAudio.length - 8 > 0xffff_ffff
+  ) {
+    throw new Error('Audio-Konvertierung lieferte keine gültige WAV-Datei');
+  }
+
+  const finalized = Buffer.from(wavAudio);
+  finalized.writeUInt32LE(finalized.length - 8, 4);
+  let offset = 12;
+  while (offset + 8 <= finalized.length) {
+    const chunkName = finalized.toString('ascii', offset, offset + 4);
+    const declaredSize = finalized.readUInt32LE(offset + 4);
+    const contentOffset = offset + 8;
+    if (chunkName === 'data') {
+      const actualSize = finalized.length - contentOffset;
+      if (actualSize > 0xffff_ffff || (declaredSize !== 0xffff_ffff && declaredSize > actualSize)) {
+        throw new Error('Audio-Konvertierung lieferte eine beschädigte WAV-Datei');
+      }
+      finalized.writeUInt32LE(actualSize, offset + 4);
+      return finalized;
+    }
+    if (declaredSize === 0xffff_ffff || contentOffset + declaredSize > finalized.length) break;
+    offset = contentOffset + declaredSize + (declaredSize % 2);
+  }
+  throw new Error('Audio-Konvertierung lieferte keine WAV-Audiodaten');
+}
+
 export function audioWithinModerationLimits(
   candidate: AudioCandidate,
   limits: AudioModerationLimits,
@@ -90,7 +160,11 @@ export async function convertAudioToWav(
         );
         return;
       }
-      resolve(Buffer.concat(output));
+      try {
+        resolve(finalizePipeWavHeader(Buffer.concat(output, outputSize)));
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error('Ungültige WAV-Ausgabe'));
+      }
     });
     process.stdin.once('error', (error) => finishWithError(error));
     process.stdin.end(input);

@@ -165,6 +165,18 @@ export const commandRegistry: readonly CommandDefinition[] = [
     category: 'Administratoren',
   },
   {
+    command: 'allowednames',
+    description: 'Erlaubte Namen anzeigen',
+    role: InternalRole.ADMIN,
+    category: 'Administratoren',
+  },
+  {
+    command: 'removeallowedname',
+    description: 'Namensfreigabe entfernen',
+    role: InternalRole.ADMIN,
+    category: 'Administratoren',
+  },
+  {
     command: 'welcome',
     description: 'Begrüßung ein- oder ausschalten',
     role: InternalRole.ADMIN,

@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   AI_MODERATION_SYSTEM_INSTRUCTION,
   applyMessagePolicyOverrides,
+  currentDateInTimeZone,
   decideAiModeration,
   decideDisplayNameModeration,
   hasSpacedCodedInsult,
   isExplicitlyAllowedGeographicStatement,
+  limitAiChatAnswer,
   limitModerationReason,
   spacedCodedInsultReview,
 } from '../src/services/ai-moderation.js';
@@ -79,7 +81,7 @@ describe('KI-Moderation', () => {
     ).toBe('log');
   });
 
-  it('verwarnt nur bei hoher Sicherheit', () => {
+  it('übergibt auch hohe KI-Sicherheit nur zur Admin-Prüfung', () => {
     expect(
       decideAiModeration(
         {
@@ -92,7 +94,36 @@ describe('KI-Moderation', () => {
         0.72,
         0.92,
       ),
-    ).toBe('warn');
+    ).toBe('log');
+  });
+
+  it('übergibt politische und explizit sexuelle KI-Treffer zur Admin-Prüfung', () => {
+    expect(
+      decideAiModeration(
+        {
+          violation: true,
+          reviewRecommended: false,
+          category: 'political',
+          confidence: 0.74,
+          reason: 'Politischer Inhalt',
+        },
+        0.45,
+        0.72,
+      ),
+    ).toBe('log');
+    expect(
+      decideAiModeration(
+        {
+          violation: true,
+          reviewRecommended: false,
+          category: 'sexual_content',
+          confidence: 0.73,
+          reason: 'Expliziter Sexualbegriff',
+        },
+        0.45,
+        0.72,
+      ),
+    ).toBe('log');
   });
 
   it('unterstützt eine getrennte, etwas niedrigere Audioschwelle', () => {
@@ -104,10 +135,10 @@ describe('KI-Moderation', () => {
       reason: 'Klar gesprochene Beleidigung',
     };
     expect(decideAiModeration(result, 0.72, 0.92)).toBe('log');
-    expect(decideAiModeration(result, 0.5, 0.75)).toBe('warn');
+    expect(decideAiModeration(result, 0.5, 0.75)).toBe('log');
   });
 
-  it('kickt eindeutige politische oder beleidigende sichtbare Namen', () => {
+  it('meldet eindeutige politische oder beleidigende sichtbare Namen nur zur Prüfung', () => {
     expect(
       decideDisplayNameModeration(
         {
@@ -117,9 +148,21 @@ describe('KI-Moderation', () => {
           reason: 'Beleidigender sichtbarer Name',
         },
         0.5,
-        0.75,
       ),
-    ).toBe('warn');
+    ).toBe('log');
+  });
+
+  it('begrenzt KI-Antworten sicher auf Telegram-Länge', () => {
+    expect(limitAiChatAnswer('  kurze Antwort  ')).toBe('kurze Antwort');
+    const answer = limitAiChatAnswer('x'.repeat(50), 20);
+    expect(answer).toHaveLength(20);
+    expect(answer.endsWith('…')).toBe(true);
+  });
+
+  it('übergibt das aktuelle Datum in der konfigurierten Zeitzone', () => {
+    const date = new Date('2026-07-10T22:30:00.000Z');
+    expect(currentDateInTimeZone(date, 'Europe/Berlin')).toBe('2026-07-11');
+    expect(currentDateInTimeZone(date, 'America/New_York')).toBe('2026-07-10');
   });
 
   it.each([

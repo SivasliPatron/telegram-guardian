@@ -1,0 +1,323 @@
+name: Lokales ASR-Image bauen
+
+on:
+  pull_request:
+    paths:
+      - local-asr/**
+      - .github/workflows/local-asr-image.yml
+  push:
+    branches:
+      - main
+    paths:
+      - local-asr/**
+      - .github/workflows/local-asr-image.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: local-asr-image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    env:
+      SMOKE_IMAGE: local/telegram-guardian-asr-smoke:${{ github.sha }}
+
+    steps:
+      - name: Projekt laden
+        uses: actions/checkout@v6
+
+      - name: Docker Buildx einrichten
+        uses: docker/setup-buildx-action@v3
+
+      - name: CPU-Image für den Smoke-Test bauen und lokal laden
+        uses: docker/build-push-action@v6
+        with:
+          context: ./local-asr
+          file: ./local-asr/Dockerfile
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: ${{ env.SMOKE_IMAGE }}
+          cache-from: type=gha,scope=local-asr
+          cache-to: type=gha,mode=max,scope=local-asr
+          provenance: false
+          sbom: false
+
+      - name: ASR-Server, Auth und Multipart-Schutz testen
+        shell: bash
+        run: |
+          set -euo pipefail
+          api_key='ci-local-asr-smoke-key-0123456789abcdef'
+          docker run --detach --name guardian-asr-smoke \
+            --env "ASR_API_KEY=${api_key}" \
+            --publish 18081:8080 \
+            "${SMOKE_IMAGE}"
+
+          ready=0
+          for _ in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:18081/health >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 5
+          done
+          if [ "${ready}" -ne 1 ]; then
+            docker logs guardian-asr-smoke
+            exit 1
+          fi
+
+          unauthorized_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --request POST http://127.0.0.1:18081/inference)"
+          test "${unauthorized_status}" = '401'
+
+          python3 - <<'PY'
+          import struct
+          import wave
+          from pathlib import Path
+
+          def write_wave(path, channels, frames):
+              with wave.open(path, 'wb') as audio:
+                  audio.setnchannels(channels)
+                  audio.setsampwidth(2)
+                  audio.setframerate(16000)
+                  audio.writeframes(frames)
+
+          write_wave('/tmp/silence.wav', 1, b'\x00\x00' * 16000)
+          write_wave('/tmp/too-long.wav', 1, b'\x00\x00' * ((120 * 16000) + 1))
+          write_wave('/tmp/stereo.wav', 2, b'\x00\x00\x00\x00' * 16000)
+          write_wave('/tmp/non-pcm.wav', 1, b'\x00\x00' * 16000)
+
+          non_pcm = bytearray(Path('/tmp/non-pcm.wav').read_bytes())
+          fmt_offset = non_pcm.index(b'fmt ')
+          struct.pack_into('<H', non_pcm, fmt_offset + 8, 3)
+          Path('/tmp/non-pcm.wav').write_bytes(non_pcm)
+
+          boundary = 'guardian-oversized-upload'
+          prefix = (
+              f'--{boundary}\r\n'
+              'Content-Disposition: form-data; name="file"; filename="large.wav"\r\n'
+              'Content-Type: audio/wav\r\n\r\n'
+          ).encode('ascii')
+          suffix = f'\r\n--{boundary}--\r\n'.encode('ascii')
+          oversized = prefix + (b'x' * 4_000_001) + suffix
+          assert len(oversized) > 4_000_000
+          Path('/tmp/asr-request-too-large.multipart').write_bytes(oversized)
+          PY
+
+          oversized_status="$(curl --silent --show-error --output /dev/null \
+            --write-out '%{http_code}' --max-time 30 \
+            http://127.0.0.1:18081/inference \
+            -H "Authorization: Bearer ${api_key}" \
+            -H 'Content-Type: multipart/form-data; boundary=guardian-oversized-upload' \
+            -H 'Expect:' \
+            --data-binary @/tmp/asr-request-too-large.multipart)"
+          test "${oversized_status}" = '413'
+
+          wav_status() {
+            curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+              --max-time 60 http://127.0.0.1:18081/inference \
+              -H "Authorization: Bearer ${api_key}" \
+              -H 'Expect:' \
+              -F "file=@${1};type=audio/wav" \
+              -F 'temperature=0' \
+              -F 'temperature_inc=0' \
+              -F 'language=auto' \
+              -F 'translate=false' \
+              -F 'response_format=json'
+          }
+          test "$(wav_status /tmp/too-long.wav)" = '400'
+          test "$(wav_status /tmp/stereo.wav)" = '400'
+          test "$(wav_status /tmp/non-pcm.wav)" = '400'
+
+          response="$(curl --fail --silent http://127.0.0.1:18081/inference \
+            -H "Authorization: Bearer ${api_key}" \
+            -H 'Expect:' \
+            -F 'file=@/tmp/silence.wav;type=audio/wav' \
+            -F 'temperature=0' \
+            -F 'temperature_inc=0' \
+            -F 'language=auto' \
+            -F 'translate=false' \
+            -F 'response_format=json')"
+          RESPONSE="${response}" python3 - <<'PY'
+          import json
+          import os
+
+          result = json.loads(os.environ["RESPONSE"])
+          assert isinstance(result["text"], str)
+          PY
+
+          ASR_KEY="${api_key}" python3 - <<'PY'
+          import http.client
+          import io
+          import json
+          import os
+          import struct
+          import wave
+          from pathlib import Path
+
+          def multipart(boundary, parts):
+              body = bytearray()
+              for headers, content in parts:
+                  body.extend(f'--{boundary}\r\n'.encode('ascii'))
+                  body.extend(headers.encode('ascii'))
+                  body.extend(b'\r\n\r\n')
+                  body.extend(content)
+                  body.extend(b'\r\n')
+              body.extend(f'--{boundary}--\r\n'.encode('ascii'))
+              return bytes(body)
+
+          def post(body, boundary, timeout=20):
+              connection = http.client.HTTPConnection('127.0.0.1', 18081, timeout=timeout)
+              connection.request(
+                  'POST',
+                  '/inference',
+                  body=body,
+                  headers={
+                      'Authorization': f'Bearer {os.environ["ASR_KEY"]}',
+                      'Content-Type': f'multipart/form-data; boundary={boundary}',
+                      'Content-Length': str(len(body)),
+                  },
+              )
+              response = connection.getresponse()
+              response_body = response.read()
+              status = response.status
+              connection.close()
+              return status, response_body
+
+          silence = Path('/tmp/silence.wav').read_bytes()
+          file_headers = (
+              'Content-Disposition: form-data; name="file"; filename="silence.wav"\r\n'
+              'Content-Type: audio/wav'
+          )
+
+          duplicate_boundary = 'guardian-duplicate-disposition'
+          duplicate_body = multipart(
+              duplicate_boundary,
+              [
+                  (file_headers, silence),
+                  (
+                      'Content-Disposition: form-data; name="temperature"\r\n'
+                      'Content-Disposition: form-data; name="duration"',
+                      b'0',
+                  ),
+              ],
+          )
+          duplicate_status, _ = post(duplicate_body, duplicate_boundary)
+          assert duplicate_status == 400, (
+              f'duplicate Content-Disposition was not rejected: {duplicate_status}'
+          )
+
+          embedded_boundary = 'guardian-embedded-boundary'
+          fake_final_marker = f'--{embedded_boundary}--'.encode('ascii')
+          pcm_frames = bytearray(b'\x00\x00' * 16000)
+          marker_offset = 100
+          pcm_frames[marker_offset : marker_offset + len(fake_final_marker)] = fake_final_marker
+          embedded_file = io.BytesIO()
+          with wave.open(embedded_file, 'wb') as audio:
+              audio.setnchannels(1)
+              audio.setsampwidth(2)
+              audio.setframerate(16000)
+              audio.writeframes(pcm_frames)
+          embedded_wav = embedded_file.getvalue()
+
+          assert embedded_wav[:4] == b'RIFF' and embedded_wav[8:12] == b'WAVE'
+          assert struct.unpack_from('<I', embedded_wav, 4)[0] == len(embedded_wav) - 8
+          data_chunk = embedded_wav.index(b'data')
+          data_size = struct.unpack_from('<I', embedded_wav, data_chunk + 4)[0]
+          data_start = data_chunk + 8
+          assert data_size == len(pcm_frames)
+          assert data_start + data_size == len(embedded_wav)
+          assert (
+              embedded_wav[
+                  data_start + marker_offset : data_start + marker_offset + len(fake_final_marker)
+              ]
+              == fake_final_marker
+          )
+
+          allowed_parts = [
+              ('Content-Disposition: form-data; name="temperature"', b'0'),
+              ('Content-Disposition: form-data; name="temperature_inc"', b'0'),
+              ('Content-Disposition: form-data; name="language"', b'auto'),
+              ('Content-Disposition: form-data; name="translate"', b'false'),
+              ('Content-Disposition: form-data; name="response_format"', b'json'),
+          ]
+          embedded_body = multipart(
+              embedded_boundary,
+              [(file_headers, embedded_wav), *allowed_parts],
+          )
+          embedded_status, embedded_response = post(
+              embedded_body,
+              embedded_boundary,
+              timeout=180,
+          )
+          assert embedded_status == 200, (
+              f'raw marker inside a valid WAV was rejected: {embedded_status}'
+          )
+          embedded_result = json.loads(embedded_response)
+          assert isinstance(embedded_result['text'], str)
+
+          forbidden_body = multipart(
+              embedded_boundary,
+              [
+                  (file_headers, embedded_wav),
+                  ('Content-Disposition: form-data; name="duration"', b'0'),
+              ],
+          )
+          forbidden_status, _ = post(forbidden_body, embedded_boundary)
+          assert forbidden_status == 400, (
+              f'embedded boundary bypassed forbidden duration validation: {forbidden_status}'
+          )
+          PY
+
+      - name: ASR-Smoke-Container entfernen
+        if: always()
+        run: docker rm --force guardian-asr-smoke 2>/dev/null || true
+
+  publish:
+    if: github.event_name != 'pull_request' && needs.smoke.result == 'success'
+    needs: smoke
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Projekt laden
+        uses: actions/checkout@v6
+
+      - name: Docker Buildx einrichten
+        uses: docker/setup-buildx-action@v3
+
+      - name: Bei GitHub Container Registry anmelden
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image-Metadaten erzeugen
+        id: metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/sivaslipatron/telegram-guardian-asr
+          tags: |
+            type=raw,value=latest
+            type=sha,format=long
+
+      - name: Geprüftes CPU-Image veröffentlichen
+        uses: docker/build-push-action@v6
+        with:
+          context: ./local-asr
+          file: ./local-asr/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          cache-from: type=gha,scope=local-asr
+          cache-to: type=gha,mode=max,scope=local-asr
+          provenance: mode=max
+          sbom: true

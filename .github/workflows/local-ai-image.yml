@@ -1,0 +1,184 @@
+name: Lokales KI-Image bauen
+
+on:
+  pull_request:
+    paths:
+      - local-ai/**
+      - .github/workflows/local-ai-image.yml
+  push:
+    branches:
+      - main
+    paths:
+      - local-ai/**
+      - .github/workflows/local-ai-image.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: local-ai-image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    env:
+      SMOKE_IMAGE: local/telegram-guardian-ai-smoke:${{ github.sha }}
+
+    steps:
+      - name: Projekt laden
+        uses: actions/checkout@v6
+
+      - name: Docker Buildx einrichten
+        uses: docker/setup-buildx-action@v3
+
+      - name: CPU-Image für den Smoke-Test bauen und lokal laden
+        uses: docker/build-push-action@v6
+        with:
+          context: ./local-ai
+          file: ./local-ai/Dockerfile
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: ${{ env.SMOKE_IMAGE }}
+          cache-from: type=gha,scope=local-ai
+          cache-to: type=gha,mode=max,scope=local-ai
+          provenance: false
+          sbom: false
+
+      - name: KI-Proxy, Auth, Health und strukturiertes JSON testen
+        shell: bash
+        run: |
+          set -euo pipefail
+          api_key='ci-local-ai-smoke-key-0123456789abcdef'
+          docker run --detach --name guardian-ai-smoke \
+            --env "LLAMA_API_KEY=${api_key}" \
+            --publish 18080:8080 \
+            "${SMOKE_IMAGE}"
+
+          ready=0
+          for _ in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:18080/health >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 5
+          done
+          if [ "${ready}" -ne 1 ]; then
+            docker logs guardian-ai-smoke
+            exit 1
+          fi
+
+          request='{"model":"guardian-qwen-3.5-2b","stream":false,"messages":[{"role":"user","content":"Antworte kurz."}],"max_tokens":16}'
+          unauthorized_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            http://127.0.0.1:18080/v1/chat/completions \
+            -H 'Content-Type: application/json' \
+            --data-binary "${request}")"
+          test "${unauthorized_status}" = '401'
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          body = b'{"padding":"' + (b'x' * 65_536) + b'"}'
+          assert len(body) > 65_536
+          Path('/tmp/ai-request-too-large.json').write_bytes(body)
+          PY
+          oversized_status="$(curl --silent --show-error --output /dev/null \
+            --write-out '%{http_code}' --max-time 20 \
+            http://127.0.0.1:18080/v1/chat/completions \
+            -H "Authorization: Bearer ${api_key}" \
+            -H 'Content-Type: application/json' \
+            -H 'Expect:' \
+            --data-binary @/tmp/ai-request-too-large.json)"
+          test "${oversized_status}" = '413'
+
+          response="$(
+            curl --fail --silent http://127.0.0.1:18080/v1/chat/completions \
+              -H "Authorization: Bearer ${api_key}" \
+              -H 'Content-Type: application/json' \
+              --data-binary @- <<'JSON'
+          {
+            "model": "guardian-qwen-3.5-2b",
+            "stream": false,
+            "messages": [
+              {"role": "system", "content": "Antworte ausschließlich im angeforderten JSON-Schema."},
+              {"role": "user", "content": "Setze ready auf true."}
+            ],
+            "temperature": 0,
+            "max_tokens": 32,
+            "response_format": {
+              "type": "json_schema",
+              "json_schema": {
+                "name": "guardian_response",
+                "strict": true,
+                "schema": {
+                  "type": "object",
+                  "properties": {"ready": {"type": "boolean"}},
+                  "required": ["ready"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+          JSON
+          )"
+          RESPONSE="${response}" python3 - <<'PY'
+          import json
+          import os
+
+          outer = json.loads(os.environ["RESPONSE"])
+          assert outer["choices"][0]["finish_reason"] == "stop"
+          content = json.loads(outer["choices"][0]["message"]["content"])
+          assert set(content) == {"ready"}
+          assert isinstance(content["ready"], bool)
+          PY
+
+      - name: KI-Smoke-Container entfernen
+        if: always()
+        run: docker rm --force guardian-ai-smoke 2>/dev/null || true
+
+  publish:
+    if: github.event_name != 'pull_request' && needs.smoke.result == 'success'
+    needs: smoke
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Projekt laden
+        uses: actions/checkout@v6
+
+      - name: Docker Buildx einrichten
+        uses: docker/setup-buildx-action@v3
+
+      - name: Bei GitHub Container Registry anmelden
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image-Metadaten erzeugen
+        id: metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/sivaslipatron/telegram-guardian-ai
+          tags: |
+            type=raw,value=latest
+            type=sha,format=long
+
+      - name: Geprüftes CPU-Image veröffentlichen
+        uses: docker/build-push-action@v6
+        with:
+          context: ./local-ai
+          file: ./local-ai/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          cache-from: type=gha,scope=local-ai
+          cache-to: type=gha,mode=max,scope=local-ai
+          provenance: mode=max
+          sbom: true
