@@ -13,6 +13,7 @@ import { enforceResolvedNameReview } from '../../services/name-review-enforcemen
 import {
   allowedNameCacheKey,
   forbiddenNameCacheKey,
+  isProtectedNeutralName,
   isValidForbiddenName,
   matchesForbiddenName,
   normalizeName,
@@ -95,7 +96,13 @@ export async function requestNameReview(
   if (!ctx.group) return;
   const visibleName = visibleProfileName(input.user).trim();
   const normalizedName = normalizeName(visibleName).normalized;
-  if (!normalizedName || !isValidForbiddenName(input.candidate.pattern)) return;
+  if (
+    !normalizedName ||
+    isProtectedNeutralName(visibleName) ||
+    !isValidForbiddenName(input.candidate.pattern)
+  ) {
+    return;
+  }
 
   const target = await ensureUser(dependencies.database, input.user);
   const requestKey = createHash('sha256')
@@ -261,6 +268,13 @@ export function registerNameReviewModule(dependencies: Dependencies): void {
         show_alert: true,
       });
       await finishNameReviewMessage(dependencies, ctx, '⌛ Prüfung abgelaufen.');
+      return;
+    }
+    if (parsed.decision === 'forbid' && isProtectedNeutralName(review.displayName)) {
+      await ctx.answerCallbackQuery({
+        text: 'Dieser neutrale Name darf nicht gesperrt werden.',
+        show_alert: true,
+      });
       return;
     }
 
@@ -431,6 +445,7 @@ async function resolvedDecisionIsStillActive(
     );
   }
   if (review.status !== NameReviewStatus.FORBIDDEN) return false;
+  if (isProtectedNeutralName(review.normalizedName)) return false;
   const forbiddenNames = await dependencies.database.forbiddenName.findMany({
     where: { groupId: review.groupId, enabled: true, deletedAt: null },
     select: { normalizedPattern: true, compactPattern: true },

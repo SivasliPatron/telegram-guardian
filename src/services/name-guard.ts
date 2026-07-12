@@ -3,7 +3,8 @@ import type { Database } from '../database/client.js';
 import type { RedisClient } from './redis.js';
 
 const CACHE_SECONDS = 60;
-const NAME_FILTER_CACHE_REVISION = 'v2';
+const NAME_FILTER_CACHE_REVISION = 'v3';
+const PROTECTED_NEUTRAL_NAMES = new Set(['turk', 'türk', 'kurd', 'kürt']);
 
 export function forbiddenNameCacheKey(groupId: string): string {
   return `forbidden-names:${NAME_FILTER_CACHE_REVISION}:${groupId}`;
@@ -47,6 +48,10 @@ export function normalizeName(value: string): NormalizedName {
   };
 }
 
+export function isProtectedNeutralName(value: string): boolean {
+  return PROTECTED_NEUTRAL_NAMES.has(normalizeName(value).compact);
+}
+
 export function normalizedProfileName(user: TelegramUser): NormalizedName {
   return normalizeName(visibleProfileName(user));
 }
@@ -85,6 +90,7 @@ export class NameGuardService {
     groupId: string,
     user: TelegramUser,
   ): Promise<ForbiddenNameMatch | null> {
+    if (isProtectedNeutralName(visibleProfileName(user))) return null;
     const name = normalizedProfileName(user);
     const forbiddenNames = await this.load(groupId);
     return forbiddenNames.find((forbidden) => matchesForbiddenName(name, forbidden)) ?? null;
@@ -99,7 +105,8 @@ export class NameGuardService {
   public async add(groupId: string, pattern: string, actorTelegramId: bigint) {
     const displayPattern = pattern.replace(/\s+/gu, ' ').trim();
     const normalized = normalizeName(displayPattern);
-    if (!isValidForbiddenName(displayPattern)) return null;
+    if (!isValidForbiddenName(displayPattern) || isProtectedNeutralName(displayPattern))
+      return null;
     const result = await this.database.forbiddenName.upsert({
       where: {
         groupId_normalizedPattern: {
@@ -135,12 +142,15 @@ export class NameGuardService {
   }
 
   public async list(groupId: string) {
-    return this.database.forbiddenName.findMany({
+    const entries = await this.database.forbiddenName.findMany({
       where: { groupId, enabled: true, deletedAt: null },
-      select: { id: true, pattern: true },
+      select: { id: true, pattern: true, compactPattern: true },
       orderBy: { createdAt: 'asc' },
       take: 100,
     });
+    return entries
+      .filter(({ compactPattern }) => !PROTECTED_NEUTRAL_NAMES.has(compactPattern))
+      .map(({ id, pattern }) => ({ id, pattern }));
   }
 
   public async allow(groupId: string, displayName: string, actorTelegramId: bigint) {
@@ -186,8 +196,12 @@ export class NameGuardService {
   private async load(groupId: string): Promise<CachedForbiddenName[]> {
     const key = this.cacheKey(groupId);
     const cached = await this.redis.get(key);
-    if (cached) return JSON.parse(cached) as CachedForbiddenName[];
-    const entries = await this.database.forbiddenName.findMany({
+    if (cached) {
+      return (JSON.parse(cached) as CachedForbiddenName[]).filter(
+        ({ compactPattern }) => !PROTECTED_NEUTRAL_NAMES.has(compactPattern),
+      );
+    }
+    const storedEntries = await this.database.forbiddenName.findMany({
       where: { groupId, enabled: true, deletedAt: null },
       select: {
         id: true,
@@ -196,6 +210,9 @@ export class NameGuardService {
         compactPattern: true,
       },
     });
+    const entries = storedEntries.filter(
+      ({ compactPattern }) => !PROTECTED_NEUTRAL_NAMES.has(compactPattern),
+    );
     await this.redis.set(key, JSON.stringify(entries), 'EX', CACHE_SECONDS);
     return entries;
   }

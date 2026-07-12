@@ -64,9 +64,6 @@ export function formatModerationReviewMessage(input: {
     `<b>Möglicher Bereich:</b> ${escapeHtml(input.category)}`,
     `<b>KI-Einschätzung:</b> ${Math.round(input.confidence * 100)} %`,
     `<b>Hinweis:</b> ${escapeHtml(input.reason)}`,
-    '',
-    'Die Nachricht wurde noch nicht gelöscht und es wurde noch keine Verwarnung vergeben. Bitte entscheidet mit einem Button.',
-    'Bei „Verwarnung: Ja“ wird genau dieser Satz zusätzlich als automatischer Wortfilter gespeichert.',
   ].join('\n');
 }
 
