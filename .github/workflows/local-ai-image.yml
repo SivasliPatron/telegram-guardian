@@ -102,23 +102,13 @@ jobs:
             "model": "guardian-qwen-3.5-2b",
             "stream": false,
             "messages": [
-              {"role": "system", "content": "Antworte ausschließlich im angeforderten JSON-Schema."},
+              {"role": "system", "content": "Antworte ausschließlich als JSON-Objekt mit genau dem booleschen Feld ready."},
               {"role": "user", "content": "Setze ready auf true."}
             ],
             "temperature": 0,
             "max_tokens": 32,
             "response_format": {
-              "type": "json_schema",
-              "json_schema": {
-                "name": "guardian_response",
-                "strict": true,
-                "schema": {
-                  "type": "object",
-                  "properties": {"ready": {"type": "boolean"}},
-                  "required": ["ready"],
-                  "additionalProperties": false
-                }
-              }
+              "type": "json_object"
             }
           }
           JSON

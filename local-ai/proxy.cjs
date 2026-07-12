@@ -188,12 +188,16 @@ function validateRequestPayload(body) {
   }
   if (payload.response_format !== undefined) {
     const responseFormat = payload.response_format;
+    if (!responseFormat || typeof responseFormat !== 'object' || Array.isArray(responseFormat)) {
+      return false;
+    }
+    if (responseFormat.type === 'json_object') {
+      if (Object.keys(responseFormat).some((key) => key !== 'type')) return false;
+      return true;
+    }
     if (
-      !responseFormat ||
-      typeof responseFormat !== 'object' ||
-      Array.isArray(responseFormat) ||
-      Object.keys(responseFormat).some((key) => !['type', 'json_schema'].includes(key)) ||
-      responseFormat.type !== 'json_schema'
+      responseFormat.type !== 'json_schema' ||
+      Object.keys(responseFormat).some((key) => !['type', 'json_schema'].includes(key))
     ) {
       return false;
     }
