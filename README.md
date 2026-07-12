@@ -60,19 +60,29 @@ Wichtig: Der Bot prüft vor Mute/Ban/Kick seine Telegram-Rechte sowie den Status
 cp .env.example .env
 ```
 
-| Variable            | Bedeutung                                                       | Beispiel                                                   |
-| ------------------- | --------------------------------------------------------------- | ---------------------------------------------------------- |
-| `BOT_TOKEN`         | Token von BotFather                                             | `123456:ABC...`                                            |
-| `DATABASE_URL`      | PostgreSQL-Verbindung; in Compose durch den Servicewert ersetzt | `postgresql://telegram_bot:...@postgres:5432/telegram_bot` |
-| `REDIS_URL`         | Redis-Verbindung                                                | `redis://redis:6379`                                       |
-| `NODE_ENV`          | `development`, `test` oder `production`                         | `production`                                               |
-| `LOG_LEVEL`         | Pino-Loglevel                                                   | `info`                                                     |
-| `DEFAULT_TIMEZONE`  | gültige IANA-Zeitzone                                           | `Europe/Berlin`                                            |
-| `OWNER_TELEGRAM_ID` | numerische Telegram-ID des globalen Betreibers                  | `123456789`                                                |
-| `HEALTH_PORT`       | interner HTTP-Healthcheck                                       | `3000`                                                     |
-| `POSTGRES_PASSWORD` | URL-sicheres Kennwort des Compose-PostgreSQL-Dienstes           | ein langes alphanumerisches Zufallskennwort                |
+| Variable             | Bedeutung                                                       | Beispiel                                                   |
+| -------------------- | --------------------------------------------------------------- | ---------------------------------------------------------- |
+| `BOT_TOKEN`          | Token von BotFather                                             | `123456:ABC...`                                            |
+| `DATABASE_URL`       | PostgreSQL-Verbindung; in Compose durch den Servicewert ersetzt | `postgresql://telegram_bot:...@postgres:5432/telegram_bot` |
+| `REDIS_URL`          | Redis-Verbindung                                                | `redis://redis:6379`                                       |
+| `NODE_ENV`           | `development`, `test` oder `production`                         | `production`                                               |
+| `LOG_LEVEL`          | Pino-Loglevel                                                   | `info`                                                     |
+| `DEFAULT_TIMEZONE`   | gültige IANA-Zeitzone                                           | `Europe/Berlin`                                            |
+| `OWNER_TELEGRAM_ID`  | numerische Telegram-ID des globalen Betreibers                  | `123456789`                                                |
+| `HEALTH_PORT`        | interner HTTP-Healthcheck                                       | `3000`                                                     |
+| `POSTGRES_PASSWORD`  | URL-sicheres Kennwort des Compose-PostgreSQL-Dienstes           | ein langes alphanumerisches Zufallskennwort                |
+| `GEMINI_API_KEY`     | API-Schlüssel für Chat sowie optionale KI-Filter                | in Google AI Studio erzeugter Schlüssel                    |
+| `AI_MODEL`           | primäres Gemini-Modell                                          | `gemini-3.1-flash-lite`                                    |
+| `AI_FALLBACK_MODELS` | kommagetrennte Ersatzmodelle bei 404, 408, 429 oder 5xx         | `gemini-3.5-flash,gemini-2.5-flash-lite`                   |
 
 Alle Pflichtwerte werden beim Start mit Zod validiert. `.env` ist per `.gitignore` und `.dockerignore` ausgeschlossen.
+
+Bei einem Modelllimit oder vorübergehenden Gemini-Ausfall versucht der Bot die Einträge aus
+`AI_FALLBACK_MODELS` der Reihe nach. Ein gesperrtes Modell wird während der von Google genannten
+Wartezeit übersprungen. Authentifizierungs- und Eingabefehler lösen bewusst keinen Modellwechsel
+aus. Die Modelle `gemini-2.5-flash-lite` und `gemini-2.5-flash` sind nur vorübergehende Reserven und
+werden laut Google am 16. Oktober 2026 abgeschaltet; sie können danach ohne Codeänderung aus der
+Umgebungsvariable entfernt werden.
 
 ## Start mit Docker Compose
 

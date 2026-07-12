@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import {
+  DEFAULT_AI_FALLBACK_MODELS,
+  DEFAULT_AI_MODEL,
+  isValidGeminiFallbackList,
+} from './ai-models.js';
 
 const timezoneSchema = z
   .string()
@@ -27,7 +32,12 @@ export const envSchema = z
     HEALTH_PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
     AI_FILTER_ENABLED: booleanEnvSchema.default(false),
     GEMINI_API_KEY: z.string().min(20).optional(),
-    AI_MODEL: z.string().min(1).default('gemini-3.1-flash-lite'),
+    AI_MODEL: z.string().min(1).default(DEFAULT_AI_MODEL),
+    AI_FALLBACK_MODELS: z
+      .string()
+      .max(500)
+      .refine(isValidGeminiFallbackList, 'Ungültige oder zu lange Gemini-Fallbackliste')
+      .default(DEFAULT_AI_FALLBACK_MODELS.join(',')),
     AI_FILTER_TIMEOUT_MS: z.coerce.number().int().min(500).max(15_000).default(3_000),
     AI_FILTER_LOG_THRESHOLD: z.coerce.number().min(0).max(1).default(0.45),
     AI_FILTER_WARN_THRESHOLD: z.coerce.number().min(0).max(1).default(0.72),
